@@ -19,6 +19,14 @@ on:
         description: "'true' adds the DerivedData snapshot experiment"
         required: false
         default: "false"
+      cold:
+        description: "'false' skips the cold build and the build on the same runner"
+        required: false
+        default: "true"
+      salt:
+        description: "The compile flag that keeps a run's keys its own: empty takes the run id, 'none' adds no flag (reads what an unsalted run uploaded)"
+        required: false
+        default: ""
       url:
         description: Cache API URL
         required: false
@@ -34,7 +42,7 @@ permissions:
 
 env:
   CACHE_URL: ${{ inputs.url || 'https://cache-dev.warmbuild.dev' }}
-  BENCH_SALT: ${{ github.run_id }}
+  BENCH_SALT: ${{ inputs.salt == 'none' && '' || inputs.salt || github.run_id }}
 
 jobs:
   plan:
@@ -59,6 +67,7 @@ jobs:
           echo "snapshot=$SNAPSHOT" >> "$GITHUB_OUTPUT"
 
   local:
+    if: inputs.cold != 'false'
     needs: plan
     name: ${{ matrix.repo.name }}
     runs-on: ${{ matrix.repo.runner || inputs.runner || 'macos-26' }}
@@ -159,7 +168,9 @@ jobs:
             ${{ runner.temp }}/bench/*.xcactivitylog
 
   remote:
-    if: needs.plan.outputs.remote == 'true'
+    if: >-
+      !cancelled() && needs.plan.outputs.remote == 'true' &&
+      (needs.local.result == 'success' || needs.local.result == 'skipped')
     needs: [plan, local]
     name: fresh runner, ${{ matrix.repo.name || 'off' }}
     runs-on: ${{ matrix.repo.runner || inputs.runner || 'macos-26' }}
