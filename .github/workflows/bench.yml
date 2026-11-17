@@ -1,0 +1,317 @@
+name: Bench
+
+# Builds public repositories (.github/bench/repos.json) with the Warmbuild Action: a cold build,
+# the same build with DerivedData and Xcode's own CAS wiped (served by the cache server's store on
+# the runner), and, with `remote`, a build on a fresh runner at another checkout path, served by
+# the remote cache alone. A compile flag per run keeps the first build cold.
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: Names of entries of repos.json, comma-separated; empty runs them all
+        required: false
+        default: ""
+      remote:
+        description: "'true' adds the build on a fresh runner from the remote cache"
+        required: false
+        default: "true"
+      snapshot:
+        description: "'true' adds the DerivedData snapshot experiment"
+        required: false
+        default: "false"
+      url:
+        description: Cache API URL
+        required: false
+        default: https://cache-dev.warmbuild.dev
+      runner:
+        description: Runner image label, for entries that name none
+        required: false
+        default: macos-26
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  CACHE_URL: ${{ inputs.url || 'https://cache-dev.warmbuild.dev' }}
+  BENCH_SALT: ${{ github.run_id }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      repos: ${{ steps.repos.outputs.repos }}
+      remote: ${{ steps.repos.outputs.remote }}
+      snapshot: ${{ steps.repos.outputs.snapshot }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: repos
+        env:
+          ONLY: ${{ inputs.only }}
+          REMOTE: ${{ inputs.remote }}
+          SNAPSHOT: ${{ inputs.snapshot }}
+        run: |
+          chosen='map(select($only == "" or (.name as $name | $only | split(",") | index($name))))'
+          repos=$(jq -c --arg only "$ONLY" "$chosen" .github/bench/repos.json)
+          [ "$repos" != "[]" ] || { echo "::error::no entry named $ONLY in repos.json"; exit 1; }
+          echo "repos=$repos" >> "$GITHUB_OUTPUT"
+          echo "remote=$REMOTE" >> "$GITHUB_OUTPUT"
+          echo "snapshot=$SNAPSHOT" >> "$GITHUB_OUTPUT"
+
+  local:
+    needs: plan
+    name: ${{ matrix.repo.name }}
+    runs-on: ${{ matrix.repo.runner || inputs.runner || 'macos-26' }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        repo: ${{ fromJSON(needs.plan.outputs.repos) }}
+    env:
+      BENCH_NAME: ${{ matrix.repo.name }}
+      BUILD: ${{ matrix.repo.build }}
+    steps:
+      - run: echo "DERIVED_DATA=$RUNNER_TEMP/dd" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v5
+        with:
+          path: warmbuild
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ matrix.repo.repository }}
+          ref: ${{ matrix.repo.ref }}
+          path: src
+          persist-credentials: false
+      # An entry's `xcode` is a version prefix (27, 27.1): the newest installed Xcode that has it.
+      - name: Select Xcode
+        if: matrix.repo.xcode != ''
+        env:
+          XCODE: ${{ matrix.repo.xcode }}
+        run: |
+          ls -d /Applications/Xcode*.app
+          newest=$(ls -d /Applications/Xcode_"$XCODE"*.app 2> /dev/null | sort -V | tail -n 1)
+          if [ -z "$newest" ]; then
+            echo "::warning::no Xcode $XCODE here; keeping the default"
+            exit 0
+          fi
+          sudo xcode-select -s "$newest"
+      - run: xcodebuild -version
+      - name: Set up
+        if: matrix.repo.setup != ''
+        working-directory: src
+        env:
+          SETUP: ${{ matrix.repo.setup }}
+        run: bash -euo pipefail -c "$SETUP"
+      - uses: ./warmbuild
+        id: warmbuild
+        with:
+          url: ${{ env.CACHE_URL }}
+          workspace: ${{ github.workspace }}/src
+          report: "false"
+      - name: Cold build
+        run: |
+          warmbuild/.github/scripts/bench-build.sh cold "$GITHUB_WORKSPACE/src" "$RUNNER_TEMP/bench"
+      - name: The CI report of the cold build
+        if: always()
+        run: |
+          node warmbuild/action/client/warmbuild.mjs ci-report \
+            --workspace "$GITHUB_WORKSPACE/src" --out "$RUNNER_TEMP/bench/cold-report.json" || true
+          for log in "$DERIVED_DATA"/Logs/Build/*.xcactivitylog; do
+            [ -f "$log" ] && cp "$log" "$RUNNER_TEMP/bench/cold-$(basename "$log")"
+          done
+          cp "${{ steps.warmbuild.outputs.stats }}" "$RUNNER_TEMP/bench/cold-stats.json" || true
+      - name: Save a snapshot of DerivedData
+        if: needs.plan.outputs.snapshot == 'true'
+        run: |
+          warmbuild/.github/scripts/bench-snapshot.sh save \
+            "$GITHUB_WORKSPACE/src" "$DERIVED_DATA" "$RUNNER_TEMP/snapshot"
+      - uses: actions/upload-artifact@v4
+        if: needs.plan.outputs.snapshot == 'true'
+        with:
+          name: snapshot-${{ matrix.repo.name }}
+          retention-days: 1
+          compression-level: 0
+          path: ${{ runner.temp }}/snapshot
+      # What a fresh runner lacks: DerivedData and Xcode's own CAS. The server's store stays.
+      - name: Wipe DerivedData and Xcode's CAS
+        run: rm -rf "$DERIVED_DATA" "$RUNNER_TEMP/warmbuild/cas"
+      - name: Warm build
+        run: |
+          warmbuild/.github/scripts/bench-build.sh warm "$GITHUB_WORKSPACE/src" "$RUNNER_TEMP/bench"
+      - name: The CI report of the warm build
+        if: always()
+        run: |
+          node warmbuild/action/client/warmbuild.mjs ci-report \
+            --workspace "$GITHUB_WORKSPACE/src" --out "$RUNNER_TEMP/bench/warm-report.json" || true
+          for log in "$DERIVED_DATA"/Logs/Build/*.xcactivitylog; do
+            [ -f "$log" ] && cp "$log" "$RUNNER_TEMP/bench/warm-$(basename "$log")"
+          done
+          cp "${{ steps.warmbuild.outputs.stats }}" "$RUNNER_TEMP/bench/warm-stats.json" || true
+          cp "$RUNNER_TEMP/warmbuild/warmbuild.log" "$RUNNER_TEMP/bench/" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-${{ matrix.repo.name }}
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/bench/*.json
+            ${{ runner.temp }}/bench/*.txt
+            ${{ runner.temp }}/bench/*.log
+            ${{ runner.temp }}/bench/*.xcactivitylog
+
+  remote:
+    if: needs.plan.outputs.remote == 'true'
+    needs: [plan, local]
+    name: fresh runner, ${{ matrix.repo.name || 'off' }}
+    runs-on: ${{ matrix.repo.runner || inputs.runner || 'macos-26' }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        repo: ${{ fromJSON(needs.plan.outputs.repos) }}
+    env:
+      BENCH_NAME: ${{ matrix.repo.name }}
+      BUILD: ${{ matrix.repo.build }}
+    steps:
+      - run: echo "DERIVED_DATA=$RUNNER_TEMP/dd" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v5
+        with:
+          path: warmbuild
+      # Another path than the first job's: hits must not depend on where the checkout is.
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ matrix.repo.repository }}
+          ref: ${{ matrix.repo.ref }}
+          path: elsewhere/src
+          persist-credentials: false
+      # An entry's `xcode` is a version prefix (27, 27.1): the newest installed Xcode that has it.
+      - name: Select Xcode
+        if: matrix.repo.xcode != ''
+        env:
+          XCODE: ${{ matrix.repo.xcode }}
+        run: |
+          ls -d /Applications/Xcode*.app
+          newest=$(ls -d /Applications/Xcode_"$XCODE"*.app 2> /dev/null | sort -V | tail -n 1)
+          if [ -z "$newest" ]; then
+            echo "::warning::no Xcode $XCODE here; keeping the default"
+            exit 0
+          fi
+          sudo xcode-select -s "$newest"
+      - run: xcodebuild -version
+      - name: Set up
+        if: matrix.repo.setup != ''
+        working-directory: elsewhere/src
+        env:
+          SETUP: ${{ matrix.repo.setup }}
+        run: bash -euo pipefail -c "$SETUP"
+      - uses: ./warmbuild
+        id: warmbuild
+        with:
+          url: ${{ env.CACHE_URL }}
+          workspace: ${{ github.workspace }}/elsewhere/src
+          report: "false"
+      - name: Build from the remote cache
+        run: |
+          warmbuild/.github/scripts/bench-build.sh remote \
+            "$GITHUB_WORKSPACE/elsewhere/src" "$RUNNER_TEMP/bench"
+      - name: Keep the server's counters
+        if: always()
+        env:
+          STATS: ${{ steps.warmbuild.outputs.stats }}
+        run: |
+          cp "$STATS" "$RUNNER_TEMP/bench/remote-stats.json" || true
+          cp "$RUNNER_TEMP/warmbuild/warmbuild.log" "$RUNNER_TEMP/bench/remote-warmbuild.log" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-remote-${{ matrix.repo.name }}
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/bench/*.json
+            ${{ runner.temp }}/bench/*.txt
+            ${{ runner.temp }}/bench/*.log
+
+  # The same checkout path as the first job, a fresh runner, the first job's DerivedData: how much
+  # of the build does Xcode skip, and what does one changed file cost?
+  snapshot:
+    if: needs.plan.outputs.snapshot == 'true'
+    needs: [plan, local]
+    name: snapshot on a fresh runner, ${{ matrix.repo.name || 'off' }}
+    runs-on: ${{ matrix.repo.runner || inputs.runner || 'macos-26' }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        repo: ${{ fromJSON(needs.plan.outputs.repos) }}
+    env:
+      BENCH_NAME: ${{ matrix.repo.name }}
+      BUILD: ${{ matrix.repo.build }}
+      EDIT: ${{ matrix.repo.edit }}
+    steps:
+      - run: echo "DERIVED_DATA=$RUNNER_TEMP/dd" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v5
+        with:
+          path: warmbuild
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ matrix.repo.repository }}
+          ref: ${{ matrix.repo.ref }}
+          path: src
+          persist-credentials: false
+      # An entry's `xcode` is a version prefix (27, 27.1): the newest installed Xcode that has it.
+      - name: Select Xcode
+        if: matrix.repo.xcode != ''
+        env:
+          XCODE: ${{ matrix.repo.xcode }}
+        run: |
+          ls -d /Applications/Xcode*.app
+          newest=$(ls -d /Applications/Xcode_"$XCODE"*.app 2> /dev/null | sort -V | tail -n 1)
+          if [ -z "$newest" ]; then
+            echo "::warning::no Xcode $XCODE here; keeping the default"
+            exit 0
+          fi
+          sudo xcode-select -s "$newest"
+      - run: xcodebuild -version
+      - name: Set up
+        if: matrix.repo.setup != ''
+        working-directory: src
+        env:
+          SETUP: ${{ matrix.repo.setup }}
+        run: bash -euo pipefail -c "$SETUP"
+      - uses: ./warmbuild
+        id: warmbuild
+        with:
+          url: ${{ env.CACHE_URL }}
+          workspace: ${{ github.workspace }}/src
+          report: "false"
+      - uses: actions/download-artifact@v4
+        with:
+          name: snapshot-${{ matrix.repo.name }}
+          path: ${{ runner.temp }}/snapshot
+      - name: Restore the snapshot
+        run: |
+          warmbuild/.github/scripts/bench-snapshot.sh restore \
+            "$GITHUB_WORKSPACE/src" "$DERIVED_DATA" "$RUNNER_TEMP/snapshot"
+      - name: Build from the snapshot
+        run: |
+          warmbuild/.github/scripts/bench-build.sh snapshot \
+            "$GITHUB_WORKSPACE/src" "$RUNNER_TEMP/bench"
+      - name: Build again, nothing changed
+        if: always()
+        run: |
+          warmbuild/.github/scripts/bench-build.sh snapshot-again \
+            "$GITHUB_WORKSPACE/src" "$RUNNER_TEMP/bench"
+      - name: Change one file and build
+        if: always() && matrix.repo.edit != ''
+        run: |
+          printf '\n// bench: one changed file\n' >> "src/$EDIT"
+          warmbuild/.github/scripts/bench-build.sh snapshot-edit \
+            "$GITHUB_WORKSPACE/src" "$RUNNER_TEMP/bench"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-snapshot-${{ matrix.repo.name }}
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/bench/*.json
+            ${{ runner.temp }}/bench/*.txt
+            ${{ runner.temp }}/bench/*.log

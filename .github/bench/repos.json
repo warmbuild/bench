@@ -1,0 +1,27 @@
+[
+  {
+    "name": "icecubes",
+    "repository": "Dimillian/IceCubesApp",
+    "ref": "98098b9c4b5928f89f338203193c2bf40ab7f38c",
+    "setup": "cp IceCubesApp.xcconfig.template IceCubesApp.xcconfig",
+    "build": "xcodebuild build -project IceCubesApp.xcodeproj -scheme IceCubesApp -destination 'generic/platform=iOS Simulator' -derivedDataPath \"$DERIVED_DATA\" -resultBundlePath \"$RESULT_BUNDLE\" -skipMacroValidation -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO",
+    "xcode": "27",
+    "runner": "xcode-27"
+  },
+  {
+    "name": "netnewswire",
+    "repository": "Ranchero-Software/NetNewsWire",
+    "ref": "8d370d329d84161da8c33ced64b4ffd0ccce60d3",
+    "setup": "git submodule update --init --recursive && PROJECT_DIR=\"$PWD\" ./buildscripts/updateSecrets.sh",
+    "build": "xcodebuild build -project NetNewsWire.xcodeproj -scheme NetNewsWire-iOS -destination 'generic/platform=iOS Simulator' -derivedDataPath \"$DERIVED_DATA\" -resultBundlePath \"$RESULT_BUNDLE\" -skipMacroValidation -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO"
+  },
+  {
+    "name": "wikipedia",
+    "repository": "wikimedia/wikipedia-ios",
+    "ref": "7fda4f243532999f4919a6c79b6571ce5d4f7fa5",
+    "setup": "git submodule update --init --recursive && scripts/setup_bundle_id ci",
+    "build": "xcodebuild build -project Wikipedia.xcodeproj -scheme Wikipedia -destination 'generic/platform=iOS Simulator' -derivedDataPath \"$DERIVED_DATA\" -resultBundlePath \"$RESULT_BUNDLE\" -skipMacroValidation -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO",
+    "runner": "xcode-27",
+    "xcode": "27"
+  }
+]
