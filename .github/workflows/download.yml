@@ -28,6 +28,15 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
+      - name: What the runner's link gives
+        run: |
+          sysctl -n hw.ncpu hw.memsize || nproc
+          curl -s -o /dev/null -w 'one stream: %{speed_download} B/s\n' \
+            'https://speed.cloudflare.com/__down?bytes=300000000'
+          for stream in 1 2 3 4 5 6 7 8; do
+            curl -s -o /dev/null -w '%{speed_download}\n' \
+              'https://speed.cloudflare.com/__down?bytes=200000000' &
+          done | awk '{ total += $1 } END { printf "eight streams: %d MB/s\n", total / 1048576 }'
       - uses: ./
         id: warmbuild
         env:
@@ -42,6 +51,8 @@ jobs:
           start=$SECONDS
           until [ "$(jq -r '.preloadMs // 0' "$STATS" 2> /dev/null || echo 0)" -gt 0 ]; do
             [ $((SECONDS - start)) -lt 900 ] || { echo "::error::no preload in 15 minutes"; break; }
+            # The server's processes: CPU share and memory, to see what bounds the download.
+            ps -axo %cpu,rss,command | grep '[w]armbuild.mjs' | awk '{ printf "cpu %s%% rss %d MB %s\n", $1, $2 / 1024, $5 }'
             sleep 2
           done
           fields='{preloadedEntries, preloadMs, remoteReads, bytesDown, readRequests, readMs, readBusyMs, deferred, httpFailures, errors}'
