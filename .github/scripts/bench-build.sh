@@ -25,7 +25,7 @@ fi
 # a copy whose every line starts with the seconds since the build began.
 stamp='BEGIN { $| = 1; $began = time } printf "%7.1f %s", time - $began, $_'
 start=$SECONDS
-(cd "$checkout" && bash -euo pipefail -c "$BUILD$salt -showBuildTimingSummary") 2>&1 |
+(cd "$checkout" && bash -euo pipefail -c "$BUILD$salt ${BENCH_SETTINGS:-} -showBuildTimingSummary") 2>&1 |
   tee "$log" | perl -MTime::HiRes=time -ne "$stamp" > "$out/$phase-timed.txt"
 status=${PIPESTATUS[0]}
 seconds=$((SECONDS - start))

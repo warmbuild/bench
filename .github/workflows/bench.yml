@@ -31,6 +31,10 @@ on:
         description: Cache API URL
         required: false
         default: https://cache-dev.warmbuild.dev
+      settings:
+        description: Build settings added to every build, such as ENABLE_GENERIC_TASK_CACHING=YES
+        required: false
+        default: ""
       runner:
         description: Runner image label, for entries that name none
         required: false
@@ -43,6 +47,7 @@ permissions:
 env:
   CACHE_URL: ${{ inputs.url || 'https://cache-dev.warmbuild.dev' }}
   BENCH_SALT: ${{ inputs.salt == 'none' && '' || inputs.salt || github.run_id }}
+  BENCH_SETTINGS: ${{ inputs.settings }}
 
 jobs:
   plan:
