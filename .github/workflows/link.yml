@@ -1,0 +1,40 @@
+name: Link
+
+# What a runner's network link gives, apart from the cache: parallel downloads of a large file
+# from two CDNs.
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Runner image label
+        required: false
+        default: xcode-27
+
+jobs:
+  link:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 5
+    steps:
+      - name: Parallel downloads
+        run: |
+          measure() {
+            local url=$1 streams=$2 started=$(date +%s.%N 2> /dev/null || date +%s)
+            for stream in $(seq "$streams"); do
+              curl -sL -o /dev/null -w '%{size_download} %{http_code}\n' "$url" &
+            done > sizes.txt
+            wait
+            local ended=$(python3 -c 'import time; print(time.time())')
+            awk -v streams="$streams" -v url="$url" '{ total += $1; codes[$2]++ }
+              END { printf "%s x%d: %d MB, codes", url, streams, total / 1048576;
+                    for (code in codes) printf " %s:%d", code, codes[code]; print "" }' sizes.txt
+            echo "$ended" > ended.txt
+          }
+          for streams in 1 8 32; do
+            for url in \
+              'https://speed.cloudflare.com/__down?bytes=50000000' \
+              'https://nodejs.org/dist/v22.11.0/node-v22.11.0-darwin-arm64.tar.gz'; do
+              start=$(python3 -c 'import time; print(time.time())')
+              measure "$url" "$streams"
+              python3 -c "import sys; print('  seconds', round(float(open('ended.txt').read()) - $start, 2))"
+            done
+          done
