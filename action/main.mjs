@@ -20,7 +20,9 @@ const paths = {
 const input = (name) => (process.env[`INPUT_${name.toUpperCase()}`] ?? "").trim();
 const append = (file, line) => {
   try {
-    appendFileSync(process.env[file], `${line}\n`);
+    // One line per entry: a newline in a value (a test name from a pull request) would start
+    // another output or environment variable.
+    appendFileSync(process.env[file], `${String(line).replace(/[\r\n]+/g, " ")}\n`);
   } catch {}
 };
 const output = (name, value) => append("GITHUB_OUTPUT", `${name}=${value}`);

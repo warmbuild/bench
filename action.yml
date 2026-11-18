@@ -17,7 +17,7 @@ inputs:
     required: false
     default: ""
   build:
-    description: "A name for this build, unique in the workflow, when one job runs several (a matrix): for example the matrix value that tells them apart. On a fresh runner the cache fetches what the last build of the same name used before Xcode asks for it. Defaults to the job's id."
+    description: "A name for this build, unique in the workflow, when one job runs several (a matrix): for example the matrix value that tells them apart. On a fresh runner the cache fetches what the last build of the same name used before Xcode asks for it (with GitHub OIDC only; a job that signs in with `token` gets its entries as Xcode asks). Defaults to the job's id."
     required: false
     default: ""
   report:
