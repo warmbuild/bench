@@ -115,6 +115,9 @@ jobs:
         with:
           url: ${{ env.CACHE_URL }}
           workspace: ${{ github.workspace }}/src
+          # The cold build and the fresh runner are two jobs and one build: the second
+          # preloads what the first used.
+          build: ${{ matrix.repo.name }}
           report: "false"
       - name: Cold build
         run: |
@@ -219,6 +222,9 @@ jobs:
         with:
           url: ${{ env.CACHE_URL }}
           workspace: ${{ github.workspace }}/elsewhere/src
+          # The cold build and the fresh runner are two jobs and one build: the second
+          # preloads what the first used.
+          build: ${{ matrix.repo.name }}
           report: "false"
       - name: Build from the remote cache
         run: |
