@@ -28,19 +28,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
-      - name: What the runner's link gives
-        run: |
-          sysctl -n hw.ncpu hw.memsize || nproc
-          curl -s -o /dev/null -w 'one stream: %{speed_download} B/s\n' \
-            'https://speed.cloudflare.com/__down?bytes=300000000'
-          for stream in 1 2 3 4 5 6 7 8; do
-            curl -s -o /dev/null -w '%{speed_download}\n' \
-              'https://speed.cloudflare.com/__down?bytes=200000000' &
-          done | awk '{ total += $1 } END { printf "eight streams: %d MB/s\n", total / 1048576 }'
       - uses: ./
         id: warmbuild
         env:
           WARMBUILD_PRELOAD_KEYS: ${{ github.workspace }}/.github/bench/${{ inputs.keys }}
+          # Every node process of the Action leaves a CPU profile when it exits.
+          NODE_OPTIONS: --cpu-prof --cpu-prof-dir=${{ runner.temp }}/profiles
         with:
           url: ${{ inputs.url }}
           report: "false"
@@ -60,3 +53,15 @@ jobs:
           jq -r '"\(.bytesDown / 1048576 | floor) MB in \(.preloadMs / 1000 | floor) s: \(.bytesDown / 1048576 / (.preloadMs / 1000) | floor) MB/s"' "$STATS" | tee -a "$GITHUB_STEP_SUMMARY"
           du -sh "$RUNNER_TEMP/warmbuild/store" || true
           tail -n 5 "$RUNNER_TEMP/warmbuild/warmbuild.log" || true
+      - name: Stop the server, so that it writes its profile
+        if: always()
+        run: |
+          node action/client/warmbuild.mjs stop --pid "$RUNNER_TEMP/warmbuild/warmbuild.pid" || true
+          sleep 3
+          ls -la "$RUNNER_TEMP/profiles" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: profiles
+          retention-days: 3
+          path: ${{ runner.temp }}/profiles
