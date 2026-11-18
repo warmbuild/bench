@@ -250,6 +250,21 @@ jobs:
         run: |
           warmbuild/.github/scripts/bench-build.sh remote-again \
             "$GITHUB_WORKSPACE/elsewhere/src" "$RUNNER_TEMP/bench"
+      # What restoring the packages would save: the same build with SourcePackages kept.
+      - name: Sizes of the package caches
+        run: |
+          du -sh "$DERIVED_DATA/SourcePackages"/* ~/Library/Caches/org.swift.swiftpm/* || true
+          find "$DERIVED_DATA/SourcePackages" ~/Library/Caches/org.swift.swiftpm -type f | wc -l
+      - name: Wipe DerivedData but its packages, and Xcode's CAS
+        run: |
+          mv "$DERIVED_DATA/SourcePackages" "$RUNNER_TEMP/kept-packages"
+          rm -rf "$DERIVED_DATA" "$RUNNER_TEMP/warmbuild/cas"
+          mkdir -p "$DERIVED_DATA"
+          mv "$RUNNER_TEMP/kept-packages" "$DERIVED_DATA/SourcePackages"
+      - name: The same build with its packages in place
+        run: |
+          warmbuild/.github/scripts/bench-build.sh remote-packages \
+            "$GITHUB_WORKSPACE/elsewhere/src" "$RUNNER_TEMP/bench"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
