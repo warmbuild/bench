@@ -117,7 +117,7 @@ jobs:
           workspace: ${{ github.workspace }}/src
           # The cold build and the fresh runner are two jobs and one build: the second
           # preloads what the first used.
-          build: ${{ matrix.repo.name }}
+          build: ${{ matrix.repo.name }}-${{ env.BENCH_SALT }}
           report: "false"
       - name: Cold build
         run: |
@@ -224,7 +224,7 @@ jobs:
           workspace: ${{ github.workspace }}/elsewhere/src
           # The cold build and the fresh runner are two jobs and one build: the second
           # preloads what the first used.
-          build: ${{ matrix.repo.name }}
+          build: ${{ matrix.repo.name }}-${{ env.BENCH_SALT }}
           report: "false"
       - name: Build from the remote cache
         run: |
@@ -237,6 +237,14 @@ jobs:
         run: |
           cp "$STATS" "$RUNNER_TEMP/bench/remote-stats.json" || true
           cp "$RUNNER_TEMP/warmbuild/warmbuild.log" "$RUNNER_TEMP/bench/remote-warmbuild.log" || true
+      # Runners differ by a factor of two; the same build again here, from this runner's disk, is
+      # what the build from the remote cache is compared with.
+      - name: Wipe DerivedData and Xcode's CAS
+        run: rm -rf "$DERIVED_DATA" "$RUNNER_TEMP/warmbuild/cas"
+      - name: The same build from this runner's disk
+        run: |
+          warmbuild/.github/scripts/bench-build.sh remote-again \
+            "$GITHUB_WORKSPACE/elsewhere/src" "$RUNNER_TEMP/bench"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
