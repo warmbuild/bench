@@ -21,9 +21,13 @@ if [ -n "${BENCH_SALT:-}" ]; then
   salt="$salt GCC_PREPROCESSOR_DEFINITIONS='\$(inherited) BENCH_SALT=$BENCH_SALT'"
 fi
 
+# Where the time goes: Xcode's own summary per task type at the end of the log, and beside the log
+# a copy whose every line starts with the seconds since the build began.
+stamp='BEGIN { $| = 1; $began = time } printf "%7.1f %s", time - $began, $_'
 start=$SECONDS
-(cd "$checkout" && bash -euo pipefail -c "$BUILD$salt") > "$log" 2>&1
-status=$?
+(cd "$checkout" && bash -euo pipefail -c "$BUILD$salt -showBuildTimingSummary") 2>&1 |
+  tee "$log" | perl -MTime::HiRes=time -ne "$stamp" > "$out/$phase-timed.txt"
+status=${PIPESTATUS[0]}
 seconds=$((SECONDS - start))
 
 hits=$(grep -c '^Cache hit' "$log" || true)
@@ -56,6 +60,12 @@ printf '{"phase":"%s","exit":%d,"seconds":%d,"hits":%d,"misses":%d}\n' \
   echo
   echo '```'
   head -n 15 "$out/$phase-misses.txt"
+  echo '```'
+  echo
+  echo "Build timing summary:"
+  echo
+  echo '```'
+  sed -n '/^Build Timing Summary/,/^\*\* BUILD/p' "$log" | head -n 40
   echo '```'
   echo
 } >> "$GITHUB_STEP_SUMMARY"
