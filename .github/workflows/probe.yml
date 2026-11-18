@@ -1,0 +1,37 @@
+name: Probe
+
+# How far a runner is from the cache API: connection, TLS and first-byte times of a few requests,
+# and the Cloudflare location that answered (the last part of cf-ray).
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Cache API URL
+        required: false
+        default: https://cache-dev.warmbuild.dev
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-26, xcode-27, ubuntu-latest]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 5
+    env:
+      URL: ${{ inputs.url }}
+    steps:
+      - name: Separate connections
+        run: |
+          for attempt in 1 2 3 4 5; do
+            curl -s -o /dev/null -D headers.txt "$URL/" \
+              -w 'connect %{time_connect}s  tls %{time_appconnect}s  first byte %{time_starttransfer}s  http %{http_version} %{http_code}\n'
+            grep -i '^cf-ray' headers.txt || true
+          done
+      - name: One connection, five requests
+        run: |
+          curl -s -o /dev/null -o /dev/null -o /dev/null -o /dev/null -o /dev/null \
+            "$URL/" "$URL/" "$URL/" "$URL/" "$URL/" \
+            -w 'first byte %{time_starttransfer}s  total %{time_total}s  reused connections: %{num_connects} new\n'
+      - name: Where the runner is
+        run: curl -s https://www.cloudflare.com/cdn-cgi/trace | grep -E '^(colo|loc)='
