@@ -16,6 +16,17 @@ if (!pid) process.exit(0);
 // Waits for the uploads, then the server reports the build.
 spawnSync(process.execPath, [client, "stop", "--pid", pid], { stdio: "inherit", timeout: 170_000 });
 
+const token = (process.env.INPUT_TOKEN ?? "").trim();
+const withToken = { ...process.env, ...(token ? { WARMBUILD_TOKEN: token } : {}) };
+// SwiftPM's cache for the next fresh runner: once per set of pins, after the build's own uploads.
+if (state("packages") !== "false" && state("url")) {
+  spawnSync(
+    process.execPath,
+    [client, "packages", "save", "--url", state("url"), "--workspace", state("workspace") || process.cwd()],
+    { env: withToken, stdio: "inherit", timeout: 150_000 },
+  );
+}
+
 const log = state("log");
 const stats = state("stats");
 let s;
