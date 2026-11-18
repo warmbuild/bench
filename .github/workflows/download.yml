@@ -1,0 +1,51 @@
+name: Download
+
+# How fast a fresh runner fills its local tier: the cache server preloads the entries a file lists
+# (those of one Wikipedia iOS build, about 1.5 GB of objects), with no Xcode build.
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Cache API URL
+        required: false
+        default: https://cache-dev.warmbuild.dev
+      runner:
+        description: Runner image label
+        required: false
+        default: xcode-27
+      keys:
+        description: The file of entry keys under .github/bench
+        required: false
+        default: keys-wikipedia.txt
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  download:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./
+        id: warmbuild
+        env:
+          WARMBUILD_PRELOAD_KEYS: ${{ github.workspace }}/.github/bench/${{ inputs.keys }}
+        with:
+          url: ${{ inputs.url }}
+          report: "false"
+      - name: Wait for the preload
+        env:
+          STATS: ${{ steps.warmbuild.outputs.stats }}
+        run: |
+          start=$SECONDS
+          until [ "$(jq -r '.preloadMs // 0' "$STATS" 2> /dev/null || echo 0)" -gt 0 ]; do
+            [ $((SECONDS - start)) -lt 900 ] || { echo "::error::no preload in 15 minutes"; break; }
+            sleep 2
+          done
+          fields='{preloadedEntries, preloadMs, remoteReads, bytesDown, readRequests, readMs, readBusyMs, deferred, httpFailures, errors}'
+          jq -c "$fields" "$STATS" | tee -a "$GITHUB_STEP_SUMMARY"
+          jq -r '"\(.bytesDown / 1048576 | floor) MB in \(.preloadMs / 1000 | floor) s: \(.bytesDown / 1048576 / (.preloadMs / 1000) | floor) MB/s"' "$STATS" | tee -a "$GITHUB_STEP_SUMMARY"
+          du -sh "$RUNNER_TEMP/warmbuild/store" || true
+          tail -n 5 "$RUNNER_TEMP/warmbuild/warmbuild.log" || true
