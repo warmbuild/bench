@@ -27,7 +27,7 @@ try {
 
 const mb = (n) => `${(n / 1e6).toFixed(1)} MB`;
 if (s) {
-  const hits = s.kvLocalHits + s.kvRemoteHits + s.kvBundleHits;
+  const hits = s.kvLocalHits + s.kvRemoteHits;
   const line = `hits ${hits}, misses ${s.kvMisses}, down ${mb(s.bytesDown)}, up ${mb(s.bytesUp)}, requests ${s.httpRequests}, lost writes ${s.lostWrites}`;
   console.log(`Warmbuild: ${line}`);
   console.log(JSON.stringify(s));

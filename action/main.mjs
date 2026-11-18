@@ -104,7 +104,11 @@ function trySelectTests() {
 
 const token = input("token");
 if (token) console.log(`::add-mask::${token}`);
-const env = { ...process.env, ...(token ? { WARMBUILD_TOKEN: token } : {}) };
+const env = {
+  ...process.env,
+  ...(token ? { WARMBUILD_TOKEN: token } : {}),
+  ...(input("build") ? { WARMBUILD_BUILD: input("build") } : {}),
+};
 const common = ["--socket", paths.socket];
 selectTests();
 

@@ -16,6 +16,10 @@ inputs:
     description: The checkout whose paths are mapped to /tmp/warmbuild/src. Set it when the repository is checked out below the workspace (actions/checkout `path:`).
     required: false
     default: ""
+  build:
+    description: "A name for this build, unique in the workflow, when one job runs several (a matrix): for example `${{ matrix.scheme }}`. On a fresh runner the cache fetches what the last build of the same name used before Xcode asks for it. Defaults to the job's id."
+    required: false
+    default: ""
   report:
     description: "'false' skips the CI report: where the job's time went, read from Xcode's build logs and result bundles in the post step (names, durations, counts and sizes; never source or logs), and any crash during the tests, symbolicated on the runner."
     required: false
