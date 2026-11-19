@@ -1,0 +1,138 @@
+name: Experiment
+
+# What would make a fresh runner faster: the same Wikipedia build on fresh runners, each job one
+# variant, all reading what an earlier bench run (`salt`) left in the remote cache.
+#   control   the Action as it is
+#   plain     no Warmbuild at all: what a project has today
+#   wait      xcodebuild starts only when the preload is done
+#   packages  SourcePackages restored before the build, and the preload awaited
+on:
+  workflow_dispatch:
+    inputs:
+      salt:
+        description: The run id of a bench run whose cold build filled the cache
+        required: true
+      url:
+        description: Cache API URL
+        required: false
+        default: https://cache-dev.warmbuild.dev
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  BENCH_SALT: ${{ inputs.salt }}
+  BENCH_NAME: wikipedia
+  REPOSITORY: wikimedia/wikipedia-ios
+  REF: 7fda4f243532999f4919a6c79b6571ce5d4f7fa5
+  BUILD: >-
+    xcodebuild build -project Wikipedia.xcodeproj -scheme Wikipedia
+    -destination 'generic/platform=iOS Simulator' -derivedDataPath "$DERIVED_DATA"
+    -resultBundlePath "$RESULT_BUNDLE" -skipMacroValidation -skipPackagePluginValidation
+    CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO
+
+jobs:
+  packages:
+    name: resolve the packages
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - run: echo "DERIVED_DATA=$RUNNER_TEMP/dd" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ env.REPOSITORY }}
+          ref: ${{ env.REF }}
+          path: elsewhere/src
+          persist-credentials: false
+      - name: Select Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_27*.app | sort -V | tail -n 1)"
+      - working-directory: elsewhere/src
+        run: |
+          git submodule update --init --recursive && scripts/setup_bundle_id ci
+          xcodebuild -resolvePackageDependencies -project Wikipedia.xcodeproj -scheme Wikipedia \
+            -derivedDataPath "$DERIVED_DATA" -skipMacroValidation -skipPackagePluginValidation
+          du -sh "$DERIVED_DATA/SourcePackages"
+          time tar -cf "$RUNNER_TEMP/packages.tar" -C "$DERIVED_DATA" SourcePackages
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-packages
+          retention-days: 1
+          compression-level: 1
+          path: ${{ runner.temp }}/packages.tar
+
+  build:
+    needs: packages
+    name: ${{ matrix.variant }}
+    runs-on: xcode-27
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [control, plain, wait, packages]
+    steps:
+      - run: |
+          echo "DERIVED_DATA=$RUNNER_TEMP/dd" >> "$GITHUB_ENV"
+          sysctl -n machdep.cpu.brand_string hw.ncpu hw.memsize
+          uptime
+      - uses: actions/checkout@v5
+        with:
+          path: warmbuild
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ env.REPOSITORY }}
+          ref: ${{ env.REF }}
+          path: elsewhere/src
+          persist-credentials: false
+      - name: Select Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_27*.app | sort -V | tail -n 1)"
+      - working-directory: elsewhere/src
+        run: git submodule update --init --recursive && scripts/setup_bundle_id ci
+      - uses: actions/download-artifact@v4
+        if: matrix.variant == 'packages'
+        with:
+          name: source-packages
+          path: ${{ runner.temp }}/packages
+      - name: Restore SourcePackages
+        if: matrix.variant == 'packages'
+        run: |
+          mkdir -p "$DERIVED_DATA"
+          time tar -xf "$RUNNER_TEMP/packages/packages.tar" -C "$DERIVED_DATA"
+      - uses: ./warmbuild
+        id: warmbuild
+        if: matrix.variant != 'plain'
+        with:
+          url: ${{ inputs.url }}
+          workspace: ${{ github.workspace }}/elsewhere/src
+          build: wikipedia-${{ env.BENCH_SALT }}
+          report: "false"
+      - name: Wait for the preload
+        if: matrix.variant == 'wait' || matrix.variant == 'packages'
+        env:
+          STATS: ${{ steps.warmbuild.outputs.stats }}
+        run: |
+          start=$SECONDS
+          until [ "$(jq -r '.preloadMs // 0' "$STATS" 2> /dev/null || echo 0)" != "0" ]; do
+            [ $((SECONDS - start)) -lt 180 ] || break
+            sleep 1
+          done
+          echo "waited $((SECONDS - start)) s for the preload"
+          jq -c '{preloadedEntries, preloadMs, bytesDown}' "$STATS"
+      - name: Build
+        run: |
+          warmbuild/.github/scripts/bench-build.sh "${{ matrix.variant }}" \
+            "$GITHUB_WORKSPACE/elsewhere/src" "$RUNNER_TEMP/bench"
+      - name: Keep the server's counters
+        if: always() && matrix.variant != 'plain'
+        env:
+          STATS: ${{ steps.warmbuild.outputs.stats }}
+        run: cp "$STATS" "$RUNNER_TEMP/bench/${{ matrix.variant }}-stats.json" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: experiment-${{ matrix.variant }}
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/bench/*.json
+            ${{ runner.temp }}/bench/*.txt
+            ${{ runner.temp }}/bench/*.log
