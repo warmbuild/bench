@@ -16,6 +16,20 @@ if (!pid) process.exit(0);
 // Waits for the uploads, then the server reports the build.
 spawnSync(process.execPath, [client, "stop", "--pid", pid], { stdio: "inherit", timeout: 170_000 });
 
+// SourcePackages for the next fresh runner: once per set of pins, after the build's own uploads.
+if (state("packages") !== "false" && state("url")) {
+  const token = (process.env.INPUT_TOKEN ?? "").trim();
+  const build = (process.env.INPUT_BUILD ?? "").trim();
+  const env = {
+    ...process.env,
+    ...(token ? { WARMBUILD_TOKEN: token } : {}),
+    ...(build ? { WARMBUILD_BUILD: build } : {}),
+  };
+  const workspace = state("workspace") || process.cwd();
+  const save = ["packages", "save", "--url", state("url"), "--workspace", workspace];
+  spawnSync(process.execPath, [client, ...save], { env, stdio: "inherit", timeout: 180_000 });
+}
+
 const log = state("log");
 const stats = state("stats");
 let s;

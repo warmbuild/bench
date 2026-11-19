@@ -40,6 +40,7 @@ mkdirSync(home, { recursive: true });
 state("started", String(Date.now()));
 state("url", input("url"));
 state("workspace", input("workspace") || process.env.GITHUB_WORKSPACE || process.cwd());
+state("packages", input("packages") || "true");
 state("report", input("report") || "true");
 state("report-budget", input("report-budget") || "90");
 
@@ -180,6 +181,14 @@ const lines = flags.stdout
     return `${setting.slice(0, at)} = ${setting.slice(at + 1)}`;
   });
 writeFileSync(paths.xcconfig, [...(previous ? [`#include "${previous}"`] : []), ...lines, ...typecheckLines(), ""].join("\n"));
+
+// SourcePackages, before xcodebuild resolves them. A restore that takes this long would cost
+// more than resolving does.
+if (input("packages") !== "false") {
+  const workspace = input("workspace") || process.env.GITHUB_WORKSPACE || process.cwd();
+  const restore = ["packages", "restore", "--url", input("url"), "--workspace", workspace];
+  spawnSync(process.execPath, [client, ...restore], { env, stdio: "inherit", timeout: 90_000 });
+}
 
 append("GITHUB_ENV", `XCODE_XCCONFIG_FILE=${paths.xcconfig}`);
 output("enabled", "true");
