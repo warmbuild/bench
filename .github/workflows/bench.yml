@@ -1,6 +1,7 @@
 name: Bench
 
-# Builds public repositories (.github/bench/repos.json) with the Warmbuild Action: a cold build,
+# Builds public repositories (.github/bench/repos.json) without Warmbuild (what a project has
+# today), and with the Warmbuild Action: a cold build,
 # the same build with DerivedData and Xcode's own CAS wiped (served by the cache server's store on
 # the runner), and, with `remote`, a build on a fresh runner at another checkout path, served by
 # the remote cache alone. A compile flag per run keeps the first build cold.
@@ -115,6 +116,19 @@ jobs:
         env:
           SETUP: ${{ matrix.repo.setup }}
         run: bash -euo pipefail -c "$SETUP"
+      # A hosted runner is handed over while macOS is still starting: its load average is above
+      # 100 for the first minutes, and a build started then takes up to twice as long. Every
+      # build here starts on a machine that has settled, so the builds can be compared.
+      - name: Wait for the runner to settle
+        run: |
+          uptime
+          start=$SECONDS
+          until sysctl -n vm.loadavg | awk '{ exit !($2 < 4) }'; do
+            [ $((SECONDS - start)) -lt 600 ] || break
+            sleep 5
+          done
+          echo "settled after $((SECONDS - start)) s"
+          uptime
       - uses: ./warmbuild
         id: warmbuild
         with:
@@ -175,6 +189,76 @@ jobs:
             ${{ runner.temp }}/bench/*.log
             ${{ runner.temp }}/bench/*.xcactivitylog
 
+  plain:
+    if: inputs.cold != 'false'
+    needs: plan
+    name: without Warmbuild, ${{ matrix.repo.name }}
+    runs-on: ${{ matrix.repo.runner || inputs.runner || 'macos-26' }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        repo: ${{ fromJSON(needs.plan.outputs.repos) }}
+    env:
+      BENCH_NAME: ${{ matrix.repo.name }}
+      BUILD: ${{ matrix.repo.build }}
+    steps:
+      - run: echo "DERIVED_DATA=$RUNNER_TEMP/dd" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v5
+        with:
+          path: warmbuild
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ matrix.repo.repository }}
+          ref: ${{ matrix.repo.ref }}
+          path: src
+          persist-credentials: false
+      # An entry's `xcode` is a version prefix (27, 27.1): the newest installed Xcode that has it.
+      - name: Select Xcode
+        if: matrix.repo.xcode != ''
+        env:
+          XCODE: ${{ matrix.repo.xcode }}
+        run: |
+          ls -d /Applications/Xcode*.app
+          newest=$(ls -d /Applications/Xcode_"$XCODE"*.app 2> /dev/null | sort -V | tail -n 1)
+          if [ -z "$newest" ]; then
+            echo "::warning::no Xcode $XCODE here; keeping the default"
+            exit 0
+          fi
+          sudo xcode-select -s "$newest"
+      - run: xcodebuild -version
+      - name: Set up
+        if: matrix.repo.setup != ''
+        working-directory: src
+        env:
+          SETUP: ${{ matrix.repo.setup }}
+        run: bash -euo pipefail -c "$SETUP"
+      # A hosted runner is handed over while macOS is still starting: its load average is above
+      # 100 for the first minutes, and a build started then takes up to twice as long. Every
+      # build here starts on a machine that has settled, so the builds can be compared.
+      - name: Wait for the runner to settle
+        run: |
+          uptime
+          start=$SECONDS
+          until sysctl -n vm.loadavg | awk '{ exit !($2 < 4) }'; do
+            [ $((SECONDS - start)) -lt 600 ] || break
+            sleep 5
+          done
+          echo "settled after $((SECONDS - start)) s"
+          uptime
+      - name: Build without Warmbuild
+        run: |
+          warmbuild/.github/scripts/bench-build.sh plain "$GITHUB_WORKSPACE/src" "$RUNNER_TEMP/bench"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-plain-${{ matrix.repo.name }}
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/bench/*.json
+            ${{ runner.temp }}/bench/*.txt
+            ${{ runner.temp }}/bench/*.log
+
   remote:
     if: >-
       !cancelled() && needs.plan.outputs.remote == 'true' &&
@@ -222,6 +306,19 @@ jobs:
         env:
           SETUP: ${{ matrix.repo.setup }}
         run: bash -euo pipefail -c "$SETUP"
+      # A hosted runner is handed over while macOS is still starting: its load average is above
+      # 100 for the first minutes, and a build started then takes up to twice as long. Every
+      # build here starts on a machine that has settled, so the builds can be compared.
+      - name: Wait for the runner to settle
+        run: |
+          uptime
+          start=$SECONDS
+          until sysctl -n vm.loadavg | awk '{ exit !($2 < 4) }'; do
+            [ $((SECONDS - start)) -lt 600 ] || break
+            sleep 5
+          done
+          echo "settled after $((SECONDS - start)) s"
+          uptime
       - uses: ./warmbuild
         id: warmbuild
         with:
@@ -307,6 +404,19 @@ jobs:
         env:
           SETUP: ${{ matrix.repo.setup }}
         run: bash -euo pipefail -c "$SETUP"
+      # A hosted runner is handed over while macOS is still starting: its load average is above
+      # 100 for the first minutes, and a build started then takes up to twice as long. Every
+      # build here starts on a machine that has settled, so the builds can be compared.
+      - name: Wait for the runner to settle
+        run: |
+          uptime
+          start=$SECONDS
+          until sysctl -n vm.loadavg | awk '{ exit !($2 < 4) }'; do
+            [ $((SECONDS - start)) -lt 600 ] || break
+            sleep 5
+          done
+          echo "settled after $((SECONDS - start)) s"
+          uptime
       - uses: ./warmbuild
         id: warmbuild
         with:
