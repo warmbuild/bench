@@ -7,6 +7,11 @@ name: Scenarios
 # First the job without Warmbuild and the one that fills the cache, then the jobs that read it.
 # One run is one round; the compile flag (the run id) keeps each round's cache its own.
 on:
+  # Temporary, until this workflow is on main: a push to this branch that changes the round file
+  # starts a round.
+  push:
+    branches: [bench/ci-scenarios]
+    paths: [.github/bench/round]
   workflow_dispatch:
     inputs:
       only:
@@ -59,7 +64,7 @@ jobs:
       entry: ${{ toJSON(matrix.job.entry) }}
       role: ${{ matrix.job.role }}
       salt: ${{ github.run_id }}
-      url: ${{ inputs.url }}
+      url: ${{ inputs.url || 'https://cache-dev.warmbuild.dev' }}
 
   second:
     needs: [plan, first]
@@ -74,4 +79,4 @@ jobs:
       entry: ${{ toJSON(matrix.job.entry) }}
       role: ${{ matrix.job.role }}
       salt: ${{ github.run_id }}
-      url: ${{ inputs.url }}
+      url: ${{ inputs.url || 'https://cache-dev.warmbuild.dev' }}
