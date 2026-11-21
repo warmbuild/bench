@@ -39,6 +39,8 @@ jobs:
         env:
           ONLY: ${{ inputs.only }}
         run: |
+          # A round started by a push names its entries in the round file (empty: all of them).
+          [ "$GITHUB_EVENT_NAME" != push ] || ONLY=$(tr -d ' \n' < .github/bench/round)
           chosen='map(select($only == "" or (.name as $name | $only | split(",") | index($name))))'
           entries=$(jq -c --arg only "$ONLY" "$chosen" .github/bench/scenarios.json)
           [ "$entries" != "[]" ] || { echo "::error::no entry named $ONLY"; exit 1; }

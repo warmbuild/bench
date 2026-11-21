@@ -15,12 +15,13 @@ simulator() {
   local devices udid
   devices=$(xcrun simctl list devices available -j)
   udid=$(jq -r '
+    def version: capture("iOS-(?<v>[0-9-]+)").v | split("-") | map(select(. != "") | tonumber);
     .devices | to_entries
     | map(select(.key | test("SimRuntime.iOS-")))
-    | sort_by(.key | capture("iOS-(?<v>[0-9-]+)").v | split("-") | map(tonumber))
-    | last | .value | map(select(.name == "iPhone 17")) | first | .udid // empty
+    | map({version: (.key | version), device: (.value | map(select(.name == "iPhone 17")))[0]})
+    | map(select(.device)) | sort_by(.version) | last | .device.udid // empty
   ' <<< "$devices")
-  [ -n "$udid" ] || { echo "::error::no iPhone 17 simulator"; exit 1; }
+  [ -n "$udid" ] || { xcrun simctl list runtimes; echo "::error::no iPhone 17 simulator"; exit 1; }
   echo "TEST_DESTINATION=platform=iOS Simulator,id=$udid" >> "$GITHUB_ENV"
   echo "SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
   echo "simulator $udid"
