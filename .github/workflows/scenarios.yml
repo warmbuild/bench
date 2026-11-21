@@ -5,13 +5,9 @@ name: Scenarios
 #   archive  xcodebuild archive (Release) after a Release build filled the cache
 #   pr       a Debug build with one Swift file changed since the build that filled the cache
 # First the job without Warmbuild and the one that fills the cache, then the jobs that read it.
-# One run is one round; the compile flag (the run id) keeps each round's cache its own.
+# One run is one round; the compile flag (the run id) keeps each round's cache its own. Dispatch
+# it from main: only the default branch may write to the cache.
 on:
-  # Temporary, until this workflow is on main: a push to this branch that changes the round file
-  # starts a round.
-  push:
-    branches: [bench/ci-scenarios]
-    paths: [.github/bench/round]
   workflow_dispatch:
     inputs:
       only:
@@ -39,8 +35,6 @@ jobs:
         env:
           ONLY: ${{ inputs.only }}
         run: |
-          # A round started by a push names its entries in the round file (empty: all of them).
-          [ "$GITHUB_EVENT_NAME" != push ] || ONLY=$(tr -d ' \n' < .github/bench/round)
           chosen='map(select($only == "" or (.name as $name | $only | split(",") | index($name))))'
           entries=$(jq -c --arg only "$ONLY" "$chosen" .github/bench/scenarios.json)
           [ "$entries" != "[]" ] || { echo "::error::no entry named $ONLY"; exit 1; }
@@ -66,7 +60,7 @@ jobs:
       entry: ${{ toJSON(matrix.job.entry) }}
       role: ${{ matrix.job.role }}
       salt: ${{ github.run_id }}
-      url: ${{ inputs.url || 'https://cache-dev.warmbuild.dev' }}
+      url: ${{ inputs.url }}
 
   second:
     needs: [plan, first]
@@ -81,4 +75,4 @@ jobs:
       entry: ${{ toJSON(matrix.job.entry) }}
       role: ${{ matrix.job.role }}
       salt: ${{ github.run_id }}
-      url: ${{ inputs.url || 'https://cache-dev.warmbuild.dev' }}
+      url: ${{ inputs.url }}
