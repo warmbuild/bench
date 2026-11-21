@@ -1,0 +1,152 @@
+name: Scenario job
+
+# One job of a CI scenario (scenarios.yml): an entry of .github/bench/scenarios.json in one role.
+#   plain   without Warmbuild: what the project has today
+#   fill    with Warmbuild and a cache this run has not filled yet (main's job that fills it)
+#   fresh   another fresh runner, nothing changed since `fill`
+#   change  another fresh runner, one Swift file changed since `fill` (a pull request)
+# The measured part starts before the Warmbuild step, so the Action's own time counts, and ends
+# when the job's xcodebuild work is done.
+on:
+  workflow_call:
+    inputs:
+      entry:
+        description: The entry of scenarios.json, as JSON
+        required: true
+        type: string
+      role:
+        required: true
+        type: string
+      salt:
+        description: The compile flag that keeps a run's keys its own
+        required: true
+        type: string
+      url:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  measure:
+    name: ${{ inputs.role }}
+    runs-on: ${{ fromJSON(inputs.entry).runner }}
+    timeout-minutes: 150
+    env:
+      BENCH_NAME: ${{ fromJSON(inputs.entry).name }}
+      BENCH_SALT: ${{ inputs.salt }}
+      KIND: ${{ fromJSON(inputs.entry).kind }}
+      ROLE: ${{ inputs.role }}
+      BUILD: ${{ fromJSON(inputs.entry).build }}
+      TEST: ${{ fromJSON(inputs.entry).test }}
+      FILL: ${{ fromJSON(inputs.entry).fill }}
+      EDIT: ${{ fromJSON(inputs.entry).edit }}
+    steps:
+      - run: |
+          echo "DERIVED_DATA=$RUNNER_TEMP/dd" >> "$GITHUB_ENV"
+          echo "BENCH_OUT=$RUNNER_TEMP/bench" >> "$GITHUB_ENV"
+          echo "ARCHIVE=$RUNNER_TEMP/archive/app.xcarchive" >> "$GITHUB_ENV"
+          sysctl -n machdep.cpu.brand_string hw.ncpu hw.memsize
+      - uses: actions/checkout@v5
+        with:
+          path: warmbuild
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ fromJSON(inputs.entry).repository }}
+          ref: ${{ fromJSON(inputs.entry).ref }}
+          path: src
+          persist-credentials: false
+      - name: Select Xcode
+        env:
+          XCODE: ${{ fromJSON(inputs.entry).xcode }}
+        run: |
+          newest=$(ls -d /Applications/Xcode_"$XCODE"*.app 2> /dev/null | sort -V | tail -n 1)
+          [ -n "$newest" ] || { echo "::error::no Xcode $XCODE here"; exit 1; }
+          sudo xcode-select -s "$newest"
+          xcodebuild -version
+      - name: Set up
+        working-directory: src
+        env:
+          SETUP: ${{ fromJSON(inputs.entry).setup }}
+        run: bash -euo pipefail -c "$SETUP"
+      - name: Find the simulator
+        if: env.KIND == 'test'
+        run: warmbuild/.github/scripts/scenario.sh simulator
+      # A pull request's job builds the changed commit, with or without Warmbuild.
+      - name: Change one file
+        if: inputs.role == 'change' || (env.KIND == 'pr' && inputs.role == 'plain')
+        run: warmbuild/.github/scripts/scenario.sh edit "$GITHUB_WORKSPACE/src"
+      # A hosted runner is handed over while macOS is still starting; every job here starts its
+      # measured part on a machine that has settled (load average below 4), as in bench.yml.
+      - name: Wait for the runner to settle
+        run: |
+          start=$SECONDS
+          until sysctl -n vm.loadavg | awk '{ exit !($2 < 4) }'; do
+            [ $((SECONDS - start)) -lt 600 ] || break
+            sleep 5
+          done
+          echo "settled after $((SECONDS - start)) s"
+          uptime
+      - name: Start the clock
+        run: warmbuild/.github/scripts/scenario.sh clock-start
+      - uses: ./warmbuild
+        id: warmbuild
+        if: inputs.role != 'plain'
+        with:
+          url: ${{ inputs.url }}
+          workspace: ${{ github.workspace }}/src
+          build: ${{ fromJSON(inputs.entry).name }}-${{ inputs.salt }}
+          # The test-result cache records passing targets from the CI report.
+          report: ${{ env.KIND == 'test' && 'true' || 'false' }}
+      # The Release build that fills the cache for the archive, then the archive on the same
+      # runner with DerivedData and Xcode's CAS wiped: its misses are what only an archive compiles.
+      - name: Release build that fills the cache
+        if: inputs.role == 'fill' && env.KIND == 'archive'
+        run: |
+          BUILD="$FILL" warmbuild/.github/scripts/bench-build.sh fill-release \
+            "$GITHUB_WORKSPACE/src" "$BENCH_OUT"
+          rm -rf "$DERIVED_DATA" "$RUNNER_TEMP/warmbuild/cas"
+      - name: Build
+        run: |
+          rm -rf "$ARCHIVE"
+          mkdir -p "$(dirname "$ARCHIVE")"
+          warmbuild/.github/scripts/bench-build.sh "$ROLE-build" "$GITHUB_WORKSPACE/src" "$BENCH_OUT"
+      - uses: ./warmbuild/test-cache
+        id: tests
+        if: env.KIND == 'test' && inputs.role != 'plain'
+        with:
+          url: ${{ inputs.url }}
+          derived-data: ${{ env.DERIVED_DATA }}
+          destination: ${{ env.TEST_DESTINATION }}
+          workspace: ${{ github.workspace }}/src
+      - name: Test
+        if: env.KIND == 'test' && (inputs.role == 'plain' || steps.tests.outputs.tests != 'none')
+        continue-on-error: true
+        run: |
+          warmbuild/.github/scripts/scenario.sh boot
+          BUILD="$TEST" warmbuild/.github/scripts/bench-build.sh "$ROLE-test" \
+            "$GITHUB_WORKSPACE/src" "$BENCH_OUT"
+      - name: Stop the clock
+        if: always()
+        env:
+          TESTS_PLANNED: ${{ steps.tests.outputs.tests }}
+        run: warmbuild/.github/scripts/scenario.sh clock-stop "$ROLE"
+      - name: Keep the server's counters
+        if: always() && inputs.role != 'plain'
+        env:
+          STATS: ${{ steps.warmbuild.outputs.stats }}
+        run: |
+          cp "$STATS" "$BENCH_OUT/stats.json" || true
+          cp "$RUNNER_TEMP/warmbuild/warmbuild.log" "$BENCH_OUT/" || true
+          cp "$RUNNER_TEMP/warmbuild/test-cache.json" "$BENCH_OUT/" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scenario-${{ fromJSON(inputs.entry).name }}-${{ inputs.role }}
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/bench/*.json
+            ${{ runner.temp }}/bench/*.txt
+            ${{ runner.temp }}/bench/*.log

@@ -1,0 +1,77 @@
+name: Scenarios
+
+# CI jobs other than a full Debug build (.github/bench/scenarios.json), each on fresh runners:
+#   test     build-for-testing and test-without-building, with Warmbuild's test-result cache
+#   archive  xcodebuild archive (Release) after a Release build filled the cache
+#   pr       a Debug build with one Swift file changed since the build that filled the cache
+# First the job without Warmbuild and the one that fills the cache, then the jobs that read it.
+# One run is one round; the compile flag (the run id) keeps each round's cache its own.
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: Names of entries of scenarios.json, comma-separated; empty runs them all
+        required: false
+        default: ""
+      url:
+        description: Cache API URL
+        required: false
+        default: https://cache-dev.warmbuild.dev
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      first: ${{ steps.plan.outputs.first }}
+      second: ${{ steps.plan.outputs.second }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: plan
+        env:
+          ONLY: ${{ inputs.only }}
+        run: |
+          chosen='map(select($only == "" or (.name as $name | $only | split(",") | index($name))))'
+          entries=$(jq -c --arg only "$ONLY" "$chosen" .github/bench/scenarios.json)
+          [ "$entries" != "[]" ] || { echo "::error::no entry named $ONLY"; exit 1; }
+          # Every entry runs without Warmbuild and fills the cache; tests and archives then run
+          # with nothing changed, tests and pull requests with one file changed.
+          first=$(jq -c '[.[] | {entry: ., role: ("plain", "fill")}]' <<< "$entries")
+          second=$(jq -c '[.[] | {entry: ., role: (
+            if .kind == "test" then ("fresh", "change")
+            elif .kind == "archive" then "fresh"
+            else "change" end)}]' <<< "$entries")
+          echo "first=$first" >> "$GITHUB_OUTPUT"
+          echo "second=$second" >> "$GITHUB_OUTPUT"
+
+  first:
+    needs: plan
+    name: ${{ matrix.job.entry.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        job: ${{ fromJSON(needs.plan.outputs.first) }}
+    uses: ./.github/workflows/scenario-job.yml
+    with:
+      entry: ${{ toJSON(matrix.job.entry) }}
+      role: ${{ matrix.job.role }}
+      salt: ${{ github.run_id }}
+      url: ${{ inputs.url }}
+
+  second:
+    needs: [plan, first]
+    if: ${{ !cancelled() }}
+    name: ${{ matrix.job.entry.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        job: ${{ fromJSON(needs.plan.outputs.second) }}
+    uses: ./.github/workflows/scenario-job.yml
+    with:
+      entry: ${{ toJSON(matrix.job.entry) }}
+      role: ${{ matrix.job.role }}
+      salt: ${{ github.run_id }}
+      url: ${{ inputs.url }}

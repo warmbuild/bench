@@ -1,0 +1,56 @@
+name: Warmbuild test cache
+description: "After xcodebuild build-for-testing: leaves out the test targets whose built products passed before. Needs the Warmbuild step earlier in the job."
+inputs:
+  derived-data:
+    description: The -derivedDataPath of build-for-testing
+    required: false
+    default: ""
+  xctestrun:
+    description: The .xctestrun file, when there are several (default the newest in the derived data)
+    required: false
+    default: ""
+  destination:
+    description: "The -destination the tests run on, e.g. id=<udid>; its runtime and device type are part of each key"
+    required: true
+  args:
+    description: "The workflow's own -only-testing / -skip-testing arguments (test selection's are added already)"
+    required: false
+    default: ""
+  cache-tests:
+    description: "'false' runs every target (passing targets are still recorded)"
+    required: false
+    default: "true"
+  workspace:
+    description: The checkout, when it is not the workspace (Metal libraries with debug info are keyed by their sources there)
+    required: false
+    default: ""
+  extra-key:
+    description: Anything else that changes test results (a fixture version, a server under test), made part of every key
+    required: false
+    default: ""
+  url:
+    description: Cache API URL
+    required: false
+    default: https://cache.warmbuild.dev
+outputs:
+  tests:
+    description: "'all', 'some' or 'none' (every target passed before: skip the Simulator boot and the test step)"
+    value: ${{ steps.plan.outputs.tests }}
+  only-testing:
+    description: The -only-testing / -skip-testing arguments for test-without-building; also in WARMBUILD_ONLY_TESTING
+    value: ${{ steps.plan.outputs.only-testing }}
+runs:
+  using: composite
+  steps:
+    - id: plan
+      shell: bash
+      env:
+        INPUT_DERIVED_DATA: ${{ inputs.derived-data }}
+        INPUT_XCTESTRUN: ${{ inputs.xctestrun }}
+        INPUT_DESTINATION: ${{ inputs.destination }}
+        INPUT_ARGS: ${{ inputs.args }}
+        INPUT_CACHE_TESTS: ${{ inputs.cache-tests }}
+        INPUT_EXTRA_KEY: ${{ inputs.extra-key }}
+        INPUT_WORKSPACE: ${{ inputs.workspace }}
+        INPUT_URL: ${{ inputs.url }}
+      run: node "$GITHUB_ACTION_PATH/../action/test-cache.mjs"
