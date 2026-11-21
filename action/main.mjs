@@ -109,6 +109,8 @@ const token = input("token");
 if (token) console.log(`::add-mask::${token}`);
 const env = {
   ...process.env,
+  // A fully hit build reads some 13,000 cached files; libuv's default of 4 threads queues them.
+  UV_THREADPOOL_SIZE: process.env.UV_THREADPOOL_SIZE || "16",
   ...(token ? { WARMBUILD_TOKEN: token } : {}),
   ...(input("build") ? { WARMBUILD_BUILD: input("build") } : {}),
 };
