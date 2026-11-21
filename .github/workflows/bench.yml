@@ -347,6 +347,19 @@ jobs:
         run: |
           warmbuild/.github/scripts/bench-build.sh remote-again \
             "$GITHUB_WORKSPACE/elsewhere/src" "$RUNNER_TEMP/bench"
+      # Hosted runners differ by up to a factor of two, so a build without Warmbuild on another
+      # runner says little about this one. The same build without Warmbuild, on this runner and
+      # last: it finds the SDK and the sources in the file cache, which can only make it faster,
+      # so the ratio to the build from the remote cache is a lower bound.
+      - name: Wipe everything a build without Warmbuild would not have
+        run: |
+          rm -rf "$DERIVED_DATA" "$RUNNER_TEMP/warmbuild/cas"
+          rm -rf ~/Library/Caches/org.swift.swiftpm ~/Library/Developer/Xcode/DerivedData
+      - name: The same build without Warmbuild, on this runner
+        run: |
+          unset XCODE_XCCONFIG_FILE
+          warmbuild/.github/scripts/bench-build.sh plain-here \
+            "$GITHUB_WORKSPACE/elsewhere/src" "$RUNNER_TEMP/bench"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

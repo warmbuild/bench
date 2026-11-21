@@ -40,6 +40,11 @@ try {
 }
 
 const mb = (n) => `${(n / 1e6).toFixed(1)} MB`;
+// The share of Xcode's cache lookups that hit, for the summary's heading; none without lookups.
+const hitShare = (hits, misses) => {
+  if (hits + misses === 0) return "";
+  return ` · ${Math.round((hits / (hits + misses)) * 100)}% of compile tasks from the cache`;
+};
 if (s) {
   const hits = s.kvLocalHits + s.kvRemoteHits;
   const line = `hits ${hits}, misses ${s.kvMisses}, down ${mb(s.bytesDown)}, up ${mb(s.bytesUp)}, requests ${s.httpRequests}, lost writes ${s.lostWrites}`;
@@ -49,11 +54,13 @@ if (s) {
     appendFileSync(
       process.env.GITHUB_STEP_SUMMARY,
       [
-        "### Warmbuild",
+        `### [Warmbuild](https://warmbuild.dev/)${hitShare(hits, s.kvMisses)}`,
         "",
         "| Hits | Misses | Downloaded | Uploaded | HTTP requests | Lost writes |",
         "| ---: | ---: | ---: | ---: | ---: | ---: |",
         `| ${hits} | ${s.kvMisses} | ${mb(s.bytesDown)} | ${mb(s.bytesUp)} | ${s.httpRequests} | ${s.lostWrites} |`,
+        "",
+        "History per repository, trends and findings: [dashboard](https://warmbuild.dev/app/).",
         "",
       ].join("\n"),
     );
