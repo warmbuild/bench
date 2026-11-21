@@ -1,0 +1,47 @@
+[
+  {
+    "name": "wikipedia-test",
+    "kind": "test",
+    "repository": "wikimedia/wikipedia-ios",
+    "ref": "7fda4f243532999f4919a6c79b6571ce5d4f7fa5",
+    "setup": "git submodule update --init --recursive && scripts/setup_bundle_id ci",
+    "build": "xcodebuild build-for-testing -project Wikipedia.xcodeproj -scheme Wikipedia -onlyUsePackageVersionsFromResolvedFile -destination 'generic/platform=iOS Simulator' -derivedDataPath \"$DERIVED_DATA\" -resultBundlePath \"$RESULT_BUNDLE\" -skipMacroValidation -skipPackagePluginValidation ARCHS=arm64 ONLY_ACTIVE_ARCH=YES SWIFT_OPTIMIZATION_LEVEL=-Onone SWIFT_COMPILATION_MODE=singlefile GCC_OPTIMIZATION_LEVEL=0 COMPILER_INDEX_STORE_ENABLE=NO",
+    "test": "xcodebuild test-without-building -project Wikipedia.xcodeproj -scheme Wikipedia -onlyUsePackageVersionsFromResolvedFile -destination \"$TEST_DESTINATION\" -derivedDataPath \"$DERIVED_DATA\" -resultBundlePath \"$RESULT_BUNDLE\" $WARMBUILD_ONLY_TESTING ARCHS=arm64 ONLY_ACTIVE_ARCH=YES SWIFT_OPTIMIZATION_LEVEL=-Onone SWIFT_COMPILATION_MODE=singlefile GCC_OPTIMIZATION_LEVEL=0 COMPILER_INDEX_STORE_ENABLE=NO",
+    "edit": "Wikipedia/Code/AppearanceSettingsViewController.swift",
+    "xcode": "27.2",
+    "runner": "xcode-27"
+  },
+  {
+    "name": "icecubes-archive",
+    "kind": "archive",
+    "repository": "Dimillian/IceCubesApp",
+    "ref": "98098b9c4b5928f89f338203193c2bf40ab7f38c",
+    "setup": "cp IceCubesApp.xcconfig.template IceCubesApp.xcconfig",
+    "fill": "xcodebuild build -configuration Release -project IceCubesApp.xcodeproj -scheme IceCubesApp -destination 'generic/platform=iOS' -derivedDataPath \"$DERIVED_DATA\" -resultBundlePath \"$RESULT_BUNDLE\" -skipMacroValidation -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO",
+    "build": "xcodebuild archive -project IceCubesApp.xcodeproj -scheme IceCubesApp -destination 'generic/platform=iOS' -archivePath \"$ARCHIVE\" -derivedDataPath \"$DERIVED_DATA\" -resultBundlePath \"$RESULT_BUNDLE\" -skipMacroValidation -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO",
+    "xcode": "27.2",
+    "runner": "xcode-27"
+  },
+  {
+    "name": "wikipedia-archive",
+    "kind": "archive",
+    "repository": "wikimedia/wikipedia-ios",
+    "ref": "7fda4f243532999f4919a6c79b6571ce5d4f7fa5",
+    "setup": "git submodule update --init --recursive && scripts/setup_bundle_id ci",
+    "fill": "xcodebuild build -configuration Release -project Wikipedia.xcodeproj -scheme Wikipedia -destination 'generic/platform=iOS' -derivedDataPath \"$DERIVED_DATA\" -resultBundlePath \"$RESULT_BUNDLE\" -skipMacroValidation -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO",
+    "build": "xcodebuild archive -project Wikipedia.xcodeproj -scheme Wikipedia -destination 'generic/platform=iOS' -archivePath \"$ARCHIVE\" -derivedDataPath \"$DERIVED_DATA\" -resultBundlePath \"$RESULT_BUNDLE\" -skipMacroValidation -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO",
+    "xcode": "27.2",
+    "runner": "xcode-27"
+  },
+  {
+    "name": "icecubes-pr",
+    "kind": "pr",
+    "repository": "Dimillian/IceCubesApp",
+    "ref": "98098b9c4b5928f89f338203193c2bf40ab7f38c",
+    "setup": "cp IceCubesApp.xcconfig.template IceCubesApp.xcconfig",
+    "build": "xcodebuild build -project IceCubesApp.xcodeproj -scheme IceCubesApp -destination 'generic/platform=iOS Simulator' -derivedDataPath \"$DERIVED_DATA\" -resultBundlePath \"$RESULT_BUNDLE\" -skipMacroValidation -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO",
+    "edit": "Packages/Timeline/Sources/Timeline/View/TimelineHeaderView.swift",
+    "xcode": "27.2",
+    "runner": "xcode-27"
+  }
+]
