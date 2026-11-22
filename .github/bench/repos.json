@@ -25,5 +25,32 @@
     "build": "xcodebuild build -project Wikipedia.xcodeproj -scheme Wikipedia -destination 'generic/platform=iOS Simulator' -derivedDataPath \"$DERIVED_DATA\" -resultBundlePath \"$RESULT_BUNDLE\" -skipMacroValidation -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO",
     "runner": "xcode-27",
     "xcode": "27.2"
+  },
+  {
+    "name": "snapzy",
+    "repository": "duongductrong/Snapzy",
+    "ref": "7c7f41c52aa6521b5f44a18e3f70db1ebe3a7c90",
+    "setup": "git submodule update --init --recursive",
+    "build": "xcodebuild build -project Snapzy.xcodeproj -scheme Snapzy -destination 'generic/platform=macOS' -derivedDataPath \"$DERIVED_DATA\" -resultBundlePath \"$RESULT_BUNDLE\" -skipMacroValidation -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=\"\" COMPILER_INDEX_STORE_ENABLE=NO",
+    "xcode": "27.2",
+    "runner": "xcode-27"
+  },
+  {
+    "name": "orchard",
+    "repository": "andrew-waters/orchard",
+    "ref": "977e839839e7f39fb24854b8e8e1b1c7ae0ec6cc",
+    "setup": "git submodule update --init --recursive",
+    "build": "xcodebuild build -project Orchard.xcodeproj -scheme Orchard -destination 'generic/platform=macOS' -derivedDataPath \"$DERIVED_DATA\" -resultBundlePath \"$RESULT_BUNDLE\" -skipMacroValidation -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=\"\" COMPILER_INDEX_STORE_ENABLE=NO",
+    "xcode": "27.2",
+    "runner": "xcode-27"
+  },
+  {
+    "name": "sparkle",
+    "repository": "sparkle-project/Sparkle",
+    "ref": "b7debdbd5cce8bef05d419512d9d6780e920c3cc",
+    "setup": "git submodule update --init --recursive",
+    "build": "xcodebuild build -project Sparkle.xcodeproj -scheme Distribution -destination 'generic/platform=macOS' -derivedDataPath \"$DERIVED_DATA\" -resultBundlePath \"$RESULT_BUNDLE\" -skipMacroValidation -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=\"\" COMPILER_INDEX_STORE_ENABLE=NO",
+    "xcode": "27.2",
+    "runner": "xcode-27"
   }
 ]
