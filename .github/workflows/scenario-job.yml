@@ -133,6 +133,17 @@ jobs:
         env:
           TESTS_PLANNED: ${{ steps.tests.outputs.tests }}
         run: warmbuild/.github/scripts/scenario.sh clock-stop "$ROLE"
+      # The hash of every product each test key holds, to tell which product differs when a key
+      # from an earlier pass does not match. After the clock, so it is not measured.
+      - name: Keep the test keys
+        if: env.KIND == 'test' && inputs.role != 'plain'
+        continue-on-error: true
+        run: |
+          start=$SECONDS
+          node warmbuild/action/client/warmbuild.mjs test-cache keys --json \
+            --derived-data "$DERIVED_DATA" --destination "$TEST_DESTINATION" \
+            --workspace "$GITHUB_WORKSPACE/src" > "$RUNNER_TEMP/test-keys.txt"
+          echo "test keys in $((SECONDS - start)) s"
       - name: Keep the server's counters
         if: always() && inputs.role != 'plain'
         env:
@@ -150,3 +161,4 @@ jobs:
             ${{ runner.temp }}/bench/*.json
             ${{ runner.temp }}/bench/*.txt
             ${{ runner.temp }}/bench/*.log
+            ${{ runner.temp }}/test-keys.txt
