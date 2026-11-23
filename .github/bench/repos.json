@@ -52,5 +52,32 @@
     "build": "xcodebuild build -project Sparkle.xcodeproj -scheme Distribution -destination 'generic/platform=macOS' -derivedDataPath \"$DERIVED_DATA\" -resultBundlePath \"$RESULT_BUNDLE\" -skipMacroValidation -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=\"\" COMPILER_INDEX_STORE_ENABLE=NO",
     "xcode": "27.2",
     "runner": "xcode-27"
+  },
+  {
+    "name": "orchard-tests",
+    "repository": "andrew-waters/orchard",
+    "ref": "977e839839e7f39fb24854b8e8e1b1c7ae0ec6cc",
+    "setup": "git submodule update --init --recursive",
+    "build": "xcodebuild build-for-testing -project Orchard.xcodeproj -scheme Orchard -destination 'platform=macOS' -derivedDataPath \"$DERIVED_DATA\" -skipMacroValidation -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=\"\" COMPILER_INDEX_STORE_ENABLE=NO -resultBundlePath \"$RESULT_BUNDLE\" && echo WARMBUILD-TESTS-START && xcodebuild test-without-building -project Orchard.xcodeproj -scheme Orchard -destination 'platform=macOS' -derivedDataPath \"$DERIVED_DATA\" -skipMacroValidation -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=\"\" COMPILER_INDEX_STORE_ENABLE=NO -resultBundlePath \"$RESULT_BUNDLE-tests\"",
+    "xcode": "27.2",
+    "runner": "xcode-27"
+  },
+  {
+    "name": "snapzy-tests",
+    "repository": "duongductrong/Snapzy",
+    "ref": "7c7f41c52aa6521b5f44a18e3f70db1ebe3a7c90",
+    "setup": "git submodule update --init --recursive",
+    "build": "xcodebuild build-for-testing -project Snapzy.xcodeproj -scheme Snapzy -destination 'platform=macOS' -derivedDataPath \"$DERIVED_DATA\" -skipMacroValidation -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=\"\" COMPILER_INDEX_STORE_ENABLE=NO -resultBundlePath \"$RESULT_BUNDLE\" && echo WARMBUILD-TESTS-START && xcodebuild test-without-building -project Snapzy.xcodeproj -scheme Snapzy -destination 'platform=macOS' -derivedDataPath \"$DERIVED_DATA\" -skipMacroValidation -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=\"\" COMPILER_INDEX_STORE_ENABLE=NO -resultBundlePath \"$RESULT_BUNDLE-tests\"",
+    "xcode": "27.2",
+    "runner": "xcode-27"
+  },
+  {
+    "name": "wikipedia-tests",
+    "repository": "wikimedia/wikipedia-ios",
+    "ref": "7fda4f243532999f4919a6c79b6571ce5d4f7fa5",
+    "setup": "git submodule update --init --recursive && scripts/setup_bundle_id ci",
+    "build": "xcodebuild build-for-testing -project Wikipedia.xcodeproj -scheme Wikipedia -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath \"$DERIVED_DATA\" -skipMacroValidation -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=\"\" COMPILER_INDEX_STORE_ENABLE=NO -resultBundlePath \"$RESULT_BUNDLE\" && echo WARMBUILD-TESTS-START && xcodebuild test-without-building -project Wikipedia.xcodeproj -scheme Wikipedia -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath \"$DERIVED_DATA\" -skipMacroValidation -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=\"\" COMPILER_INDEX_STORE_ENABLE=NO -resultBundlePath \"$RESULT_BUNDLE-tests\"",
+    "runner": "xcode-27",
+    "xcode": "27.2"
   }
 ]
