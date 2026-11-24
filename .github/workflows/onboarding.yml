@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       workspace:
-        description: The action's workspace input (empty: not set)
+        description: "The action workspace input (empty means not set)"
         required: false
         default: ""
 
