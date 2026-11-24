@@ -1,0 +1,40 @@
+name: Onboarding
+
+# A newcomer's workflow: the docs' snippet (https://warmbuild.dev/docs/ci/) for one public app.
+on:
+  workflow_dispatch:
+    inputs:
+      workspace:
+        description: The action's workspace input (empty: not set)
+        required: false
+        default: ""
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build:
+    runs-on: xcode-27
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: wikimedia/wikipedia-ios
+          ref: 7fda4f243532999f4919a6c79b6571ce5d4f7fa5
+          path: app
+      - run: sudo xcode-select -s "$(ls -d /Applications/Xcode_27.2*.app | sort -V | tail -n 1)"
+      - run: xcodebuild -version
+      - name: Set up
+        working-directory: app
+        run: git submodule update --init --recursive && scripts/setup_bundle_id ci
+      - uses: warmbuild/action@v1
+        with:
+          url: https://cache-dev.warmbuild.dev
+          workspace: ${{ inputs.workspace }}
+      - name: Build
+        working-directory: app
+        run: >
+          xcodebuild build -project Wikipedia.xcodeproj -scheme Wikipedia
+          -destination 'generic/platform=iOS Simulator' -skipMacroValidation
+          -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO
