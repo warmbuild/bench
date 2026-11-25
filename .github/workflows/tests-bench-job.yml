@@ -31,6 +31,11 @@ on:
       url:
         required: true
         type: string
+      action:
+        description: "published: warmbuild/action@v1 (v1.13.0); fixed: .github/tests-bench/fixed-action"
+        required: false
+        type: string
+        default: published
       rotate:
         description: Which test phase the warm job runs first
         required: false
@@ -60,6 +65,7 @@ jobs:
       WARMBUILD: ${{ inputs.role != 'plain' && inputs.role != 'mutate' }}
       SPLIT: ${{ inputs.role == 'fill' || inputs.role == 'warm' }}
       ROTATE: ${{ inputs.rotate }}
+      ACTION_KIND: ${{ inputs.action }}
       PACKAGE: ${{ fromJSON(inputs.entry).package.run || '' }}
     steps:
       - run: |
@@ -89,12 +95,16 @@ jobs:
           xcodebuild -version
       # The same commit as warmbuild/action@v1: the warm job runs its test-cache step and test
       # selection from it, several times in one job.
-      - name: The published Action
+      - name: The Action under test
         if: inputs.role == 'warm' || inputs.role == 'mutate'
         run: |
-          git clone -q --depth 1 --branch "$CLIENT_TAG" https://github.com/warmbuild/action "$RUNNER_TEMP/wb-action"
-          echo "WARMBUILD_ACTION=$RUNNER_TEMP/wb-action" >> "$GITHUB_ENV"
-          echo "WARMBUILD_CLIENT=$RUNNER_TEMP/wb-action/action/client/warmbuild.mjs" >> "$GITHUB_ENV"
+          action="$GITHUB_WORKSPACE/bench/.github/tests-bench/fixed-action"
+          if [ "$ACTION_KIND" != fixed ]; then
+            action="$RUNNER_TEMP/wb-action"
+            git clone -q --depth 1 --branch "$CLIENT_TAG" https://github.com/warmbuild/action "$action"
+          fi
+          echo "WARMBUILD_ACTION=$action" >> "$GITHUB_ENV"
+          echo "WARMBUILD_CLIENT=$action/action/client/warmbuild.mjs" >> "$GITHUB_ENV"
       - name: The project's own skipped tests
         run: bench/.github/scripts/tests-bench.sh skips
       - name: Break the changed file
@@ -119,11 +129,18 @@ jobs:
           bench/.github/scripts/tests-bench.sh mark action start
       - uses: warmbuild/action@v1
         id: warmbuild
-        if: env.WARMBUILD == 'true'
+        if: env.WARMBUILD == 'true' && inputs.action != 'fixed'
         with:
           url: ${{ inputs.url }}
           workspace: ${{ github.workspace }}/src
           # Only the default branch's job records passes; head jobs leave nothing for each other.
+          report: ${{ inputs.role == 'fill' && 'true' || 'false' }}
+      - uses: ./bench/.github/tests-bench/fixed-action
+        id: warmbuild-fixed
+        if: env.WARMBUILD == 'true' && inputs.action == 'fixed'
+        with:
+          url: ${{ inputs.url }}
+          workspace: ${{ github.workspace }}/src
           report: ${{ inputs.role == 'fill' && 'true' || 'false' }}
       - name: Warmbuild step done
         run: bench/.github/scripts/tests-bench.sh mark action stop
@@ -147,7 +164,17 @@ jobs:
         run: bench/.github/scripts/tests-bench.sh mark plan start
       - uses: warmbuild/action/test-cache@v1
         id: tests
-        if: inputs.role == 'fill'
+        if: inputs.role == 'fill' && inputs.action != 'fixed'
+        with:
+          url: ${{ inputs.url }}
+          derived-data: ${{ env.DERIVED_DATA }}
+          destination: platform=macOS
+          args: ${{ env.SKIP_ARGS }}
+          workspace: ${{ github.workspace }}/src
+          extra-key: ${{ inputs.salt }}
+      - uses: ./bench/.github/tests-bench/fixed-action/test-cache
+        id: tests-fixed
+        if: inputs.role == 'fill' && inputs.action == 'fixed'
         with:
           url: ${{ inputs.url }}
           derived-data: ${{ env.DERIVED_DATA }}
@@ -159,7 +186,7 @@ jobs:
         if: inputs.role == 'fill'
         run: bench/.github/scripts/tests-bench.sh mark plan stop
       - name: Test
-        if: inputs.role == 'fill' && steps.tests.outputs.tests != 'none'
+        if: inputs.role == 'fill' && steps.tests.outputs.tests != 'none' && steps.tests-fixed.outputs.tests != 'none'
         run: bench/.github/scripts/tests-bench.sh run-tests
       - name: Package tests
         if: env.PACKAGE != '' && env.SPLIT != 'true' && inputs.role != 'mutate'
@@ -168,7 +195,17 @@ jobs:
         if: env.PACKAGE != '' && env.SPLIT == 'true'
         run: bench/.github/scripts/tests-bench.sh mark package start
       - uses: warmbuild/action/step-cache@v1
-        if: env.PACKAGE != '' && env.SPLIT == 'true'
+        if: env.PACKAGE != '' && env.SPLIT == 'true' && inputs.action != 'fixed'
+        continue-on-error: true
+        with:
+          url: ${{ inputs.url }}
+          name: ${{ fromJSON(inputs.entry).package.name }}
+          run: cd "$SRC" && ${{ fromJSON(inputs.entry).package.run }}
+          package-path: ${{ github.workspace }}/src/${{ fromJSON(inputs.entry).package.path }}
+          workspace: ${{ github.workspace }}/src
+          extra-key: ${{ inputs.salt }}
+      - uses: ./bench/.github/tests-bench/fixed-action/step-cache
+        if: env.PACKAGE != '' && env.SPLIT == 'true' && inputs.action == 'fixed'
         continue-on-error: true
         with:
           url: ${{ inputs.url }}
@@ -183,7 +220,7 @@ jobs:
       - name: Stop the clock
         if: always()
         env:
-          TESTS_PLANNED: ${{ steps.tests.outputs.tests }}
+          TESTS_PLANNED: ${{ steps.tests.outputs.tests || steps.tests-fixed.outputs.tests }}
         run: bench/.github/scripts/tests-bench.sh clock-stop
       - name: Test results
         if: always() && inputs.role != 'warm'
@@ -194,7 +231,7 @@ jobs:
       - name: Keep the server's counters
         if: always() && env.WARMBUILD == 'true'
         env:
-          STATS: ${{ steps.warmbuild.outputs.stats }}
+          STATS: ${{ steps.warmbuild.outputs.stats || steps.warmbuild-fixed.outputs.stats }}
         run: |
           cp "$STATS" "$BENCH_OUT/stats.json" || true
           cp "$RUNNER_TEMP/warmbuild/test-cache.json" "$BENCH_OUT/" || true
@@ -204,7 +241,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: tests-${{ fromJSON(inputs.entry).name }}-${{ inputs.round }}-${{ inputs.role }}
+          name: tests-${{ fromJSON(inputs.entry).name }}-${{ inputs.round }}-${{ inputs.role }}${{ inputs.action == 'fixed' && '-fixed' || '' }}
           retention-days: 14
           path: |
             ${{ runner.temp }}/bench/*.json

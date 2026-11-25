@@ -1,0 +1,87 @@
+name: Warmbuild
+description: Remote compilation cache for Xcode 26+. Add this step before xcodebuild; nothing else changes.
+branding:
+  icon: zap
+  color: orange
+inputs:
+  url:
+    description: Cache API URL
+    required: false
+    default: https://cache.warmbuild.dev
+  token:
+    description: "A Warmbuild API token, for runners without GitHub OIDC. Leave empty on GitHub-hosted runners (the job needs `permissions: id-token: write`)."
+    required: false
+    default: ""
+  workspace:
+    description: The checkout whose paths are mapped to /tmp/warmbuild/src. Set it when the repository is checked out below the workspace (actions/checkout `path:`).
+    required: false
+    default: ""
+  build:
+    description: "A name for this build, unique in the workflow, when one job runs several (a matrix): for example the matrix value that tells them apart. On a fresh runner the cache fetches what the last build of the same name used before Xcode asks for it (with GitHub OIDC only; a job that signs in with `token` gets its entries as Xcode asks). Defaults to the job's id."
+    required: false
+    default: ""
+  packages:
+    description: "'false' turns off the Swift package cache. A job that may write saves the SourcePackages folder Xcode resolved into (checkouts and binary artifacts), once per set of pins (the checkout's Package.resolved files); the next job of the same build gets it back before xcodebuild runs, instead of resolving every package again. With GitHub OIDC only."
+    required: false
+    default: "true"
+  report:
+    description: "'false' skips the CI report: where the job's time went, read from Xcode's build logs and result bundles in the post step (names, durations, counts and sizes; never source or logs), and any crash during the tests, symbolicated on the runner."
+    required: false
+    default: "true"
+  report-budget:
+    description: "Seconds the CI report may spend reading result bundles (xcresulttool) in the post step. What does not fit is skipped and the report says so. On a runner whose Simulator is still busy, xcresulttool can take minutes to start; shut the Simulator down after the tests (xcrun simctl shutdown all) or raise this."
+    required: false
+    default: "90"
+  typecheck:
+    description: "'false' turns off type-check timing. On pull requests the Action times how long Swift takes to type-check each function and expression, only in the targets the pull request changes (those compile without the cache in that job; the default branch never gets the timers), and the CI report names the slowest and what the pull request added. Type-check failures are reported either way."
+    required: false
+    default: "true"
+  typecheck-threshold:
+    description: Milliseconds from which a function or expression is timed
+    required: false
+    default: "100"
+  typecheck-warn:
+    description: Milliseconds from which a function in changed code is called slow (a warning on the pull request)
+    required: false
+    default: "1000"
+  typecheck-max-files:
+    description: A target is timed only when it holds at most this many Swift files the pull request did not change (they compile without the cache in that job)
+    required: false
+    default: "60"
+  select-tests:
+    description: "'true' selects the tests a pull request can reach (see outputs); pushes and other events run everything. Pass `$WARMBUILD_ONLY_TESTING` to `xcodebuild test`."
+    required: false
+    default: "false"
+  select-tests-ignore:
+    description: Changed paths that never affect tests, one regular expression per line (documentation and tooling are ignored already)
+    required: false
+    default: ""
+  select-tests-always:
+    description: Test targets or Target/Suite ids to run on every pull request, one per line
+    required: false
+    default: ""
+  select-tests-scheme:
+    description: "The scheme `xcodebuild test` runs: -only-testing names only its test targets, read from project.yml or the shared .xcscheme (default: every test target of the project). Swift package test targets go to swift-filter."
+    required: false
+    default: ""
+  select-tests-sample:
+    description: Share of the other test files to run anyway, so every test runs on some pull requests
+    required: false
+    default: "0.05"
+outputs:
+  enabled:
+    description: "'true' when the cache server runs and xcodebuild uses it"
+  xcconfig:
+    description: The xcconfig with the cache settings (also exported as XCODE_XCCONFIG_FILE)
+  stats:
+    description: Path of the JSON file with the server's counters, updated while the job runs
+  tests:
+    description: "With select-tests: 'all', 'some' or 'none' for xcodebuild (none: nothing the change reaches is in the project; skip the test step or pass only-testing, which skips every target)"
+  only-testing:
+    description: With select-tests, the -only-testing / -skip-testing arguments for xcodebuild, naming only the project's test targets (empty when everything runs); also in WARMBUILD_ONLY_TESTING
+  swift-filter:
+    description: With select-tests, a `swift test --filter` pattern for the selected tests (empty when everything runs)
+runs:
+  using: node24
+  main: action/main.mjs
+  post: action/post.mjs

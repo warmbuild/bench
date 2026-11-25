@@ -65,6 +65,11 @@ skips() {
     ' "$src/.github/workflows/ci.yml")
   fi
   while IFS= read -r id; do [ -z "$id" ] || ids+=("$id"); done < <(field '.skipExtra[]')
+  # Tests that fail on this runner image with or without Warmbuild; left out with the fixed Action,
+  # whose test-result cache records a target only when every test it runs passes.
+  if [ "${ACTION_KIND:-}" = fixed ]; then
+    while IFS= read -r id; do [ -z "$id" ] || ids+=("$id"); done < <(field '.skipFailing[]')
+  fi
   local args=""
   for id in "${ids[@]+"${ids[@]}"}"; do args="$args -skip-testing:$id"; done
   echo "SKIP_ARGS=${args# }" >> "$GITHUB_ENV"
@@ -159,7 +164,11 @@ phase() {
 # The entry's phases, rotated by $ROTATE so each round starts with another one.
 phases() {
   local list=() name
-  while IFS= read -r name; do list+=("$name"); done < <(field '.phases[]')
+  # The fixed Action holds the scheme fix already: selectfix would repeat select.
+  while IFS= read -r name; do
+    [ "${ACTION_KIND:-}" = fixed ] && [ "$name" = selectfix ] && continue
+    list+=("$name")
+  done < <(field '.phases[]')
   local count=${#list[@]} offset=$(( ${ROTATE:-0} % ${#list[@]} )) index
   for ((index = 0; index < count; index++)); do
     phase "${list[$(( (index + offset) % count ))]}"

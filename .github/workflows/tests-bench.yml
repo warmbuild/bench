@@ -18,6 +18,11 @@ on:
         description: Which test phase the warm jobs run first (0, 1, 2, …)
         required: false
         default: "0"
+      action:
+        description: "published: warmbuild/action@v1; fixed: the build in .github/tests-bench/fixed-action"
+        type: choice
+        options: [published, fixed]
+        default: published
       mutate:
         description: Also run the selection check (the changed file broken on purpose)
         type: boolean
@@ -70,6 +75,7 @@ jobs:
       round: ${{ github.run_id }}
       url: ${{ inputs.url }}
       rotate: ${{ inputs.rotate }}
+      action: ${{ inputs.action }}
 
   second:
     needs: [plan, first]
@@ -87,3 +93,4 @@ jobs:
       round: ${{ github.run_id }}
       url: ${{ inputs.url }}
       rotate: ${{ inputs.rotate }}
+      action: ${{ inputs.action }}

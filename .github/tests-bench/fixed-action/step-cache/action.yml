@@ -1,0 +1,60 @@
+name: Warmbuild step cache
+description: "Runs a CI step (swift test, a package's xcodebuild build or build-for-testing) unless the files it reads passed before. Needs the Warmbuild step earlier in the job."
+inputs:
+  name:
+    description: The step's name, as the job summary and the dashboard show it; part of the key
+    required: true
+  run:
+    description: The command (bash), run unless its inputs passed before; part of the key
+    required: true
+  package-path:
+    description: The Swift package the command builds; its files and those of its local (path) dependencies are inputs
+    required: false
+    default: ""
+  paths:
+    description: Other files and directories the command reads (a workspace, scripts, fixtures), one per line
+    required: false
+    default: ""
+  destination:
+    description: "The -destination of an xcodebuild step; its runtime and device type are part of the key (default: the runner's OS and architecture)"
+    required: false
+    default: ""
+  cache-steps:
+    description: "'false' runs the command (a pass is still recorded)"
+    required: false
+    default: "true"
+  workspace:
+    description: The checkout, when it is not the workspace; every path must be below it
+    required: false
+    default: ""
+  extra-key:
+    description: Anything else that changes the result (a fixture version, a server under test), made part of the key
+    required: false
+    default: ""
+  url:
+    description: Cache API URL
+    required: false
+    default: https://cache.warmbuild.dev
+outputs:
+  ran:
+    description: "'true' when the command ran, 'false' when its inputs passed before and it was skipped"
+    value: ${{ steps.step.outputs.ran }}
+  key:
+    description: The step's key (empty when it could not be computed and the command ran)
+    value: ${{ steps.step.outputs.key }}
+runs:
+  using: composite
+  steps:
+    - id: step
+      shell: bash
+      env:
+        INPUT_NAME: ${{ inputs.name }}
+        INPUT_RUN: ${{ inputs.run }}
+        INPUT_PACKAGE_PATH: ${{ inputs.package-path }}
+        INPUT_PATHS: ${{ inputs.paths }}
+        INPUT_DESTINATION: ${{ inputs.destination }}
+        INPUT_CACHE_STEPS: ${{ inputs.cache-steps }}
+        INPUT_WORKSPACE: ${{ inputs.workspace }}
+        INPUT_EXTRA_KEY: ${{ inputs.extra-key }}
+        INPUT_URL: ${{ inputs.url }}
+      run: node "$GITHUB_ACTION_PATH/../action/step-cache.mjs"
