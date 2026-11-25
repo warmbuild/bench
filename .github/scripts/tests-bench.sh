@@ -286,8 +286,10 @@ for node in tree.get("testNodes", []):
 def ids_of(path):
     target = next((n["name"] for n in path if n.get("nodeType") == "Unit test bundle"), "?")
     suites = [n["name"] for n in path if n.get("nodeType") == "Test Suite"]
+    # A case's identifier is Type/method() in a suite, or function() at the top level; suites in
+    # the tree carry display names, so the type comes from the identifier.
     case = path[-1].get("nodeIdentifier") or path[-1]["name"]
-    candidates = [f"{target}/{s}" for s in suites] + [f"{target}/{case}", f"{target}/{path[-1]['name']}"]
+    candidates = [f"{target}/{case.split('/')[0]}", f"{target}/{case}"]
     return target, suites, case, candidates
 misses = []
 for path in failed:
