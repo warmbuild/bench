@@ -21,9 +21,9 @@ mkdir -p "$out"
 
 field() { jq -r "$1 // empty" <<< "${ENTRY:?}"; }
 
-# A compile flag unique to the run, so each round fills the cache itself; it changes no product.
+# A compile flag unique to the run and entry, so each fills the cache itself; it changes no product.
 salt_settings() {
-  printf "%s" "SWIFT_ACTIVE_COMPILATION_CONDITIONS=\$(inherited) BENCH_${BENCH_SALT:?}"
+  printf "%s" "SWIFT_ACTIVE_COMPILATION_CONDITIONS=\$(inherited) BENCH_${BENCH_SALT//-/_}"
 }
 
 # Sets COMMON: the arguments every xcodebuild invocation of the entry takes.

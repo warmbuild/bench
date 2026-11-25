@@ -71,7 +71,7 @@ jobs:
     with:
       entry: ${{ toJSON(matrix.job.entry) }}
       role: ${{ matrix.job.role }}
-      salt: ${{ github.run_id }}
+      salt: ${{ github.run_id }}_${{ matrix.job.entry.name }}
       round: ${{ github.run_id }}
       url: ${{ inputs.url }}
       rotate: ${{ inputs.rotate }}
@@ -89,7 +89,7 @@ jobs:
     with:
       entry: ${{ toJSON(matrix.job.entry) }}
       role: ${{ matrix.job.role }}
-      salt: ${{ github.run_id }}
+      salt: ${{ github.run_id }}_${{ matrix.job.entry.name }}
       round: ${{ github.run_id }}
       url: ${{ inputs.url }}
       rotate: ${{ inputs.rotate }}
