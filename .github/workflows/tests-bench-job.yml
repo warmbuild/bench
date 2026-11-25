@@ -1,0 +1,206 @@
+name: Tests bench job
+
+# One job of a tests-bench round (tests-bench.yml), for an entry of .github/tests-bench/scenarios.json:
+#   fill       the default branch at the base commit, with Warmbuild, the test-result cache and the
+#              step cache: fills the compilation cache and records the passing targets and steps
+#   plain      the pull request's head commit without Warmbuild: one `xcodebuild test`, as the
+#              project's own CI runs it
+#   cache      the head with the Warmbuild Action only (compilation cache), one `xcodebuild test`
+#   testcache  the head with the compilation cache, the test-result cache and the step cache
+#   select     the same, plus test selection as the Action computes it on a pull request
+#   selectfix  `select` with the scheme fix of warmbuild#<fix> applied to the selection's output
+#   mutate     the head without Warmbuild, the changed file broken on purpose, every test run: the
+#              tests that fail must be ones the selection would have run
+# The measured part starts before the Warmbuild step and ends when the tests are done.
+on:
+  workflow_call:
+    inputs:
+      entry:
+        required: true
+        type: string
+      role:
+        required: true
+        type: string
+      salt:
+        description: Keeps the round's compile keys, test results and step results its own
+        required: true
+        type: string
+      round:
+        required: true
+        type: string
+      url:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  # The published client, for test selection (the Action runs it on pull requests only).
+  CLIENT_TAG: v1.13.0
+
+jobs:
+  measure:
+    name: ${{ inputs.role }}
+    runs-on: ${{ fromJSON(inputs.entry).runner }}
+    timeout-minutes: 90
+    env:
+      ENTRY: ${{ inputs.entry }}
+      ROLE: ${{ inputs.role }}
+      ROUND: ${{ inputs.round }}
+      BENCH_SALT: ${{ inputs.salt }}
+      CACHE_URL: ${{ inputs.url }}
+      BASE: ${{ fromJSON(inputs.entry).base }}
+      WARMBUILD: ${{ inputs.role != 'plain' && inputs.role != 'mutate' }}
+      SPLIT: ${{ inputs.role != 'plain' && inputs.role != 'cache' && inputs.role != 'mutate' }}
+      PACKAGE: ${{ fromJSON(inputs.entry).package.run || '' }}
+    steps:
+      - run: |
+          echo "DERIVED_DATA=$RUNNER_TEMP/dd" >> "$GITHUB_ENV"
+          echo "BENCH_OUT=$RUNNER_TEMP/bench" >> "$GITHUB_ENV"
+          echo "SRC=$GITHUB_WORKSPACE/src" >> "$GITHUB_ENV"
+          sysctl -n machdep.cpu.brand_string hw.ncpu hw.memsize
+          sw_vers
+      - uses: actions/checkout@v5
+        with:
+          path: bench
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ fromJSON(inputs.entry).repository }}
+          ref: ${{ inputs.role == 'fill' && fromJSON(inputs.entry).base || fromJSON(inputs.entry).head }}
+          path: src
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - name: Select Xcode
+        env:
+          XCODE: ${{ fromJSON(inputs.entry).xcode }}
+        run: |
+          newest=$(ls -d /Applications/Xcode_"$XCODE"*.app 2> /dev/null | sort -V | tail -n 1)
+          [ -n "$newest" ] || { echo "::error::no Xcode $XCODE here"; exit 1; }
+          sudo xcode-select -s "$newest"
+          xcodebuild -version
+      - name: The published client
+        if: inputs.role == 'select' || inputs.role == 'selectfix' || inputs.role == 'mutate'
+        run: |
+          git clone -q --depth 1 --branch "$CLIENT_TAG" https://github.com/warmbuild/action "$RUNNER_TEMP/wb-action"
+          echo "WARMBUILD_CLIENT=$RUNNER_TEMP/wb-action/action/client/warmbuild.mjs" >> "$GITHUB_ENV"
+      - name: The project's own skipped tests
+        run: bench/.github/scripts/tests-bench.sh skips
+      - name: Break the changed file
+        if: inputs.role == 'mutate'
+        run: |
+          bench/.github/scripts/tests-bench.sh mutate
+          git -C src diff --stat
+      # A hosted runner is handed over while macOS is still starting; every job starts its
+      # measured part on a machine that has settled (load average below 4), as in bench.yml.
+      - name: Wait for the runner to settle
+        run: |
+          start=$SECONDS
+          until sysctl -n vm.loadavg | awk '{ exit !($2 < 4) }'; do
+            [ $((SECONDS - start)) -lt 600 ] || break
+            sleep 5
+          done
+          echo "settled after $((SECONDS - start)) s"
+          uptime
+      - name: Start the clock
+        run: |
+          bench/.github/scripts/tests-bench.sh clock-start
+          bench/.github/scripts/tests-bench.sh mark action start
+      - uses: warmbuild/action@v1
+        id: warmbuild
+        if: env.WARMBUILD == 'true'
+        with:
+          url: ${{ inputs.url }}
+          workspace: ${{ github.workspace }}/src
+          # Only the default branch's job records passes; head jobs leave nothing for each other.
+          report: ${{ inputs.role == 'fill' && 'true' || 'false' }}
+      - name: Warmbuild step done
+        run: bench/.github/scripts/tests-bench.sh mark action stop
+      - name: Test selection
+        if: inputs.role == 'select' || inputs.role == 'selectfix'
+        run: bench/.github/scripts/tests-bench.sh select "$BASE"
+      - name: Test selection, with the scheme fix
+        if: inputs.role == 'selectfix'
+        run: bench/.github/scripts/tests-bench.sh select-fixed
+      - name: Test selection, for the check
+        if: inputs.role == 'mutate'
+        env:
+          SELECT_SAMPLE: "0"
+          SELECT_FLAGS: --no-hints
+        run: bench/.github/scripts/tests-bench.sh select "$BASE"
+      - name: Build and test
+        if: env.SPLIT != 'true'
+        run: bench/.github/scripts/tests-bench.sh test
+      - name: Build for testing
+        if: env.SPLIT == 'true'
+        run: bench/.github/scripts/tests-bench.sh build
+      - name: Test cache plan starts
+        if: env.SPLIT == 'true'
+        run: bench/.github/scripts/tests-bench.sh mark plan start
+      - uses: warmbuild/action/test-cache@v1
+        id: tests
+        if: env.SPLIT == 'true'
+        with:
+          url: ${{ inputs.url }}
+          derived-data: ${{ env.DERIVED_DATA }}
+          destination: platform=macOS
+          args: ${{ env.SKIP_ARGS }}
+          workspace: ${{ github.workspace }}/src
+          extra-key: ${{ inputs.salt }}
+      - name: Test cache plan done
+        if: env.SPLIT == 'true'
+        run: bench/.github/scripts/tests-bench.sh mark plan stop
+      - name: Test
+        if: env.SPLIT == 'true' && steps.tests.outputs.tests != 'none'
+        run: bench/.github/scripts/tests-bench.sh run-tests
+      - name: Package tests
+        if: env.PACKAGE != '' && env.SPLIT != 'true' && inputs.role != 'mutate'
+        run: bench/.github/scripts/tests-bench.sh package
+      - name: Package tests start
+        if: env.PACKAGE != '' && env.SPLIT == 'true'
+        run: bench/.github/scripts/tests-bench.sh mark package start
+      - uses: warmbuild/action/step-cache@v1
+        if: env.PACKAGE != '' && env.SPLIT == 'true'
+        continue-on-error: true
+        with:
+          url: ${{ inputs.url }}
+          name: ${{ fromJSON(inputs.entry).package.name }}
+          run: cd "$SRC" && ${{ fromJSON(inputs.entry).package.run }}
+          package-path: ${{ github.workspace }}/src/${{ fromJSON(inputs.entry).package.path }}
+          workspace: ${{ github.workspace }}/src
+          extra-key: ${{ inputs.salt }}
+      - name: Package tests done
+        if: env.PACKAGE != '' && env.SPLIT == 'true'
+        run: bench/.github/scripts/tests-bench.sh mark package stop
+      - name: Stop the clock
+        if: always()
+        env:
+          TESTS_PLANNED: ${{ steps.tests.outputs.tests }}
+        run: bench/.github/scripts/tests-bench.sh clock-stop
+      - name: Test results
+        if: always()
+        run: bench/.github/scripts/tests-bench.sh results test || true
+      - name: Mutation check
+        if: always() && inputs.role == 'mutate'
+        run: bench/.github/scripts/tests-bench.sh verify
+      - name: Keep the server's counters
+        if: always() && env.WARMBUILD == 'true'
+        env:
+          STATS: ${{ steps.warmbuild.outputs.stats }}
+        run: |
+          cp "$STATS" "$BENCH_OUT/stats.json" || true
+          cp "$RUNNER_TEMP/warmbuild/test-cache.json" "$BENCH_OUT/" || true
+          cp "$RUNNER_TEMP"/warmbuild/steps/*.json "$BENCH_OUT/" 2> /dev/null || true
+          grep -cE '^ *[0-9.]+ Cache hit' "$BENCH_OUT"/build.log "$BENCH_OUT"/test.log 2> /dev/null || true
+          grep -cE '^ *[0-9.]+ Cache miss' "$BENCH_OUT"/build.log "$BENCH_OUT"/test.log 2> /dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tests-${{ fromJSON(inputs.entry).name }}-${{ inputs.round }}-${{ inputs.role }}
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/bench/*.json
+            ${{ runner.temp }}/bench/*.txt
+            ${{ runner.temp }}/bench/*.log

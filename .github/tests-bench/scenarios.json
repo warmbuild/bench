@@ -1,0 +1,124 @@
+[
+  {
+    "name": "orchard-code",
+    "about": "andrew-waters/orchard PR #180, its last commit: one service file (ComposePluginService.swift)",
+    "repository": "andrew-waters/orchard",
+    "base": "9032edc022c7fe8c3bcb90147df25feec6cca9c1",
+    "head": "dc11014a0308c362edae2f38eea93326dbfd5849",
+    "project": "Orchard.xcodeproj",
+    "scheme": "Orchard",
+    "settings": "-skipPackagePluginValidation -skipMacroValidation CODE_SIGNING_ALLOWED=NO",
+    "testSettings": "",
+    "skipFromCi": "",
+    "skipExtra": [],
+    "mutations": [
+      {
+        "file": "Orchard/Services/ComposePluginService.swift",
+        "find": "return lower.contains(\"unknown command 'compose'\")",
+        "replace": "return !lower.contains(\"unknown command 'compose'\")"
+      },
+      {
+        "file": "Orchard/Services/ComposePluginService.swift",
+        "find": "let maxSymlinkHops = 40",
+        "replace": "let maxSymlinkHops = 0"
+      },
+      {
+        "file": "Orchard/Services/ComposePluginService.swift",
+        "find": "return lhs.padded(to: count).lexicographicallyPrecedes(rhs.padded(to: count))",
+        "replace": "return rhs.padded(to: count).lexicographicallyPrecedes(lhs.padded(to: count))"
+      }
+    ],
+    "runner": "xcode-27",
+    "xcode": "27.2",
+    "variants": [
+      "cache",
+      "testcache",
+      "select",
+      "selectfix"
+    ]
+  },
+  {
+    "name": "orchard-docs",
+    "about": "andrew-waters/orchard main after the merge of #180: four commits that change only .gannin/ metadata",
+    "repository": "andrew-waters/orchard",
+    "base": "9eb4e28a3955f321077d28a96cb7fbec69380ea9",
+    "head": "977e839839e7f39fb24854b8e8e1b1c7ae0ec6cc",
+    "project": "Orchard.xcodeproj",
+    "scheme": "Orchard",
+    "settings": "-skipPackagePluginValidation -skipMacroValidation CODE_SIGNING_ALLOWED=NO",
+    "testSettings": "",
+    "skipFromCi": "",
+    "skipExtra": [],
+    "mutations": [],
+    "runner": "xcode-27",
+    "xcode": "27.2",
+    "variants": [
+      "cache",
+      "testcache",
+      "select"
+    ]
+  },
+  {
+    "name": "snapzy-code",
+    "about": "duongductrong/Snapzy 60e2292: one app file (MenuBarIconRenderer.swift, 4 lines)",
+    "repository": "duongductrong/Snapzy",
+    "base": "6a88437d4e4783c8e96860a391bf649ce5c501ec",
+    "head": "60e22922c64edad3a3be49260c5dd16bfdc5285e",
+    "project": "Snapzy.xcodeproj",
+    "scheme": "Snapzy",
+    "settings": "-skipPackagePluginValidation -skipMacroValidation CODE_SIGN_IDENTITY= CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO",
+    "testSettings": "-parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180",
+    "skipFromCi": "SNAPZY_CI_SKIP_TESTS",
+    "skipExtra": [],
+    "package": {
+      "name": "SnapzyCLIKit tests",
+      "path": "Packages/SnapzyCLIKit",
+      "run": "swift test --package-path Packages/SnapzyCLIKit"
+    },
+    "mutations": [
+      {
+        "file": "Snapzy/App/MenuBarIconRenderer.swift",
+        "find": "let canvasSize = NSSize(width: 18, height: 18)",
+        "replace": "let canvasSize = NSSize(width: 20, height: 20)"
+      },
+      {
+        "file": "Snapzy/App/MenuBarIconRenderer.swift",
+        "find": "return fileManager.fileExists(atPath: url.path)",
+        "replace": "return !fileManager.fileExists(atPath: url.path)"
+      }
+    ],
+    "runner": "xcode-27",
+    "xcode": "27.2",
+    "variants": [
+      "cache",
+      "testcache",
+      "select"
+    ]
+  },
+  {
+    "name": "snapzy-docs",
+    "about": "duongductrong/Snapzy 1b44d9c: appcast.xml and docs/*.md only",
+    "repository": "duongductrong/Snapzy",
+    "base": "8eff1e8a58f3d3a77e2ac4e8b252db32ebfe27b6",
+    "head": "1b44d9c390d77c1bb76e8b6eced52433bed209ed",
+    "project": "Snapzy.xcodeproj",
+    "scheme": "Snapzy",
+    "settings": "-skipPackagePluginValidation -skipMacroValidation CODE_SIGN_IDENTITY= CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO",
+    "testSettings": "-parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180",
+    "skipFromCi": "SNAPZY_CI_SKIP_TESTS",
+    "skipExtra": [],
+    "package": {
+      "name": "SnapzyCLIKit tests",
+      "path": "Packages/SnapzyCLIKit",
+      "run": "swift test --package-path Packages/SnapzyCLIKit"
+    },
+    "mutations": [],
+    "runner": "xcode-27",
+    "xcode": "27.2",
+    "variants": [
+      "cache",
+      "testcache",
+      "select"
+    ]
+  }
+]
