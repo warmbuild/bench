@@ -20,7 +20,24 @@ run's job summary and artifacts.
 The `action/` folder is a build of the Warmbuild Action under test, which may be ahead of the
 released [warmbuild/action](https://github.com/warmbuild/action).
 
-## Results (19 and 21 November 2026)
+## Results: macOS apps (24 November 2026)
+
+Xcode 27.2, GitHub-hosted `xcode-27` arm64 runners, `xcodebuild build` of the macOS app (Debug,
+generic destination, code signing off), two rounds, both shown. The fresh runner builds from the
+remote cache; the same runner then builds the commit without Warmbuild, last, with DerivedData,
+Xcode's own cache and SwiftPM's caches wiped (`plain-here`). That build still finds the SDK and
+the sources in the file cache, which can only make it faster, so the ratio is a lower bound. Hits
+as below.
+
+| App | Without Warmbuild, same runner | Fresh runner, remote cache | Speedup | Hits on the fresh runner |
+| --- | ---: | ---: | ---: | ---: |
+| Snapzy | 405 s, 459 s | 109 s, 137 s | 3.7×, 3.4× | 100% (1039 and 1034, no misses) |
+| Orchard | 898 s, 742 s | 286 s, 271 s | 3.1×, 2.7× | 100% (3125 in each round, no misses) |
+
+Runs: 45512825302, 45512855861 (this repository at 65d5981; Snapzy at 7c7f41c, Orchard at
+977e839, as pinned in `.github/bench/repos.json`).
+
+## Results: iOS apps (19 and 21 November 2026)
 
 Xcode 27.2, GitHub-hosted macOS arm64 runners, `xcodebuild build` for the iOS Simulator (Debug,
 generic destination, code signing off), every build started once the runner has settled after
