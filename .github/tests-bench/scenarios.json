@@ -30,9 +30,9 @@
     ],
     "runner": "xcode-27",
     "xcode": "27.2",
-    "variants": [
+    "phases": [
+      "all",
       "cache",
-      "testcache",
       "select",
       "selectfix"
     ]
@@ -52,9 +52,9 @@
     "mutations": [],
     "runner": "xcode-27",
     "xcode": "27.2",
-    "variants": [
+    "phases": [
+      "all",
       "cache",
-      "testcache",
       "select"
     ]
   },
@@ -89,9 +89,9 @@
     ],
     "runner": "xcode-27",
     "xcode": "27.2",
-    "variants": [
+    "phases": [
+      "all",
       "cache",
-      "testcache",
       "select"
     ]
   },
@@ -115,9 +115,9 @@
     "mutations": [],
     "runner": "xcode-27",
     "xcode": "27.2",
-    "variants": [
+    "phases": [
+      "all",
       "cache",
-      "testcache",
       "select"
     ]
   }

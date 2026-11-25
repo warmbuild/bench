@@ -4,6 +4,7 @@
 #   tests-bench.sh skips             writes $SKIP_ARGS: the project's own CI -skip-testing list
 #   tests-bench.sh clock-start       the measured part starts (before the Warmbuild step)
 #   tests-bench.sh select <base>     test selection for the head commit, as the Action runs it
+#   tests-bench.sh phases            the warm job's test phases, one after another (see phase())
 #   tests-bench.sh test              one `xcodebuild test` (build and test in one invocation)
 #   tests-bench.sh build             `xcodebuild build-for-testing`
 #   tests-bench.sh run-tests         `xcodebuild test-without-building $WARMBUILD_ONLY_TESTING`
@@ -83,10 +84,8 @@ select_tests() {
     --url "${CACHE_URL:?}" --sample "${SELECT_SAMPLE:-0.05}" --scheme "$(field .scheme)" \
     ${SELECT_FLAGS:-} \
     --summary "$GITHUB_STEP_SUMMARY" > "$file"
-  local args
-  args=$(jq -r 'if .all or .xcodebuildTests == "all" then "" else .xcodebuild | join(" ") end' \
-    "$file")
-  echo "WARMBUILD_ONLY_TESTING=$args" >> "$GITHUB_ENV"
+  jq -r 'if .all or .xcodebuildTests == "all" then "" else .xcodebuild | join(" ") end' \
+    "$file" > "$out/select-args.txt"
   jq -c '{all, reason, xcodebuildTests, xcodebuildReason, selectedTests, totalTests,
     suites: (.ids | length)}' "$file"
   printf '{"phase":"select","exit":0,"seconds":%d}\n' $((SECONDS - start)) > "$out/select.json"
@@ -96,16 +95,75 @@ select_tests() {
 # does not hold is dropped instead of running everything. Emulated from the published client's
 # own output (ids and the scheme's targets), so only that one decision differs.
 select_fixed() {
-  local file="$out/selection.json" args
-  args=$(jq -r '
+  local file="$out/selection.json"
+  jq -r '
     if .all then ""
     else (.schemeTargets // []) as $scheme
       | [.ids[] | select((split("/")[0]) as $t | $scheme | index($t))] as $ids
       | if ($ids | length) == 0 then ($scheme | map("-skip-testing:" + .) | join(" "))
         else ($ids | map("-only-testing:" + .) | join(" ")) end
-    end' "$file")
-  echo "WARMBUILD_ONLY_TESTING=$args" >> "$GITHUB_ENV"
-  echo "fixed selection: $(wc -w <<< "$args") arguments"
+    end' "$file" > "$out/selectfix-args.txt"
+  echo "fixed selection: $(wc -w < "$out/selectfix-args.txt") arguments"
+}
+
+# The test-cache step of the published Action (its action/test-cache.mjs, what
+# warmbuild/action/test-cache@v1 runs), for one phase: prints its `tests` output on the first
+# line and the arguments for test-without-building on the second.
+plan_tests() {
+  local selection="$1" outputs environment
+  outputs=$(mktemp)
+  environment=$(mktemp)
+  INPUT_DERIVED_DATA="$DERIVED_DATA" INPUT_DESTINATION=platform=macOS INPUT_ARGS="${SKIP_ARGS:-}" \
+    INPUT_WORKSPACE="$src" INPUT_EXTRA_KEY="${BENCH_SALT:?}" INPUT_URL="${CACHE_URL:?}" \
+    INPUT_CACHE_TESTS=true INPUT_XCTESTRUN="" WARMBUILD_ONLY_TESTING="$selection" \
+    GITHUB_OUTPUT="$outputs" GITHUB_ENV="$environment" \
+    node "${WARMBUILD_ACTION:?}/action/test-cache.mjs" >&2
+  sed -n 's/^tests=//p' "$outputs" | tail -n 1
+  sed -n 's/^only-testing=//p' "$outputs" | tail -n 1
+}
+
+# One test phase of the warm job, after one build-for-testing with the compilation cache:
+#   all        every test the project's CI runs (the compilation cache alone)
+#   cache      the test-cache step first (the test-result cache)
+#   select     test selection, then the test-cache step (both)
+#   selectfix  `select` with the scheme fix applied to the selection's output
+# Its time (selection, plan and tests) goes to phase-<name>.json.
+phase() {
+  local name="$1" start=$SECONDS tests="all" only="" plan
+  case "$name" in
+    all) only="${SKIP_ARGS:-}" ;;
+    cache | select | selectfix)
+      local selection=""
+      if [ "$name" != cache ]; then
+        select_tests "$BASE"
+        selection=$(cat "$out/select-args.txt")
+      fi
+      if [ "$name" = selectfix ]; then
+        select_fixed
+        selection=$(cat "$out/selectfix-args.txt")
+      fi
+      plan=$(plan_tests "$selection")
+      tests=$(sed -n 1p <<< "$plan")
+      only=$(sed -n 2p <<< "$plan")
+      ;;
+    *) echo "unknown phase $name" >&2; return 2 ;;
+  esac
+  echo "$name: tests ${tests:-?}, $(wc -w <<< "$only") arguments"
+  [ "$tests" = none ] || WARMBUILD_ONLY_TESTING="$only" run_tests "test-$name"
+  printf '{"phase":"phase-%s","exit":0,"seconds":%d,"tests":"%s"}\n' "$name" \
+    $((SECONDS - start)) "$tests" > "$out/phase-$name.json"
+  # Counted after the phase's clock: reading the result bundle is not part of a CI job's tests.
+  [ "$tests" = none ] || results "test-$name" || true
+}
+
+# The entry's phases, rotated by $ROTATE so each round starts with another one.
+phases() {
+  local list=() name
+  while IFS= read -r name; do list+=("$name"); done < <(field '.phases[]')
+  local count=${#list[@]} offset=$(( ${ROTATE:-0} % ${#list[@]} )) index
+  for ((index = 0; index < count; index++)); do
+    phase "${list[$(( (index + offset) % count ))]}"
+  done
 }
 
 xcodebuild_test() {
@@ -122,10 +180,11 @@ build() {
 }
 
 run_tests() {
+  local phase="${1:-test}"
   common_args
   # shellcheck disable=SC2086
-  timed test xcodebuild test-without-building "${COMMON[@]}" $(field .settings) \
-    $(field .testSettings) -resultBundlePath "$out/test.xcresult" ${WARMBUILD_ONLY_TESTING:-}
+  timed "$phase" xcodebuild test-without-building "${COMMON[@]}" $(field .settings) \
+    $(field .testSettings) -resultBundlePath "$out/$phase.xcresult" ${WARMBUILD_ONLY_TESTING:-}
 }
 
 package() {
@@ -238,10 +297,10 @@ case "$1" in
   clock-start) clock_start ;;
   mark) mark "$2" "$3" ;;
   select) select_tests "$2" ;;
-  select-fixed) select_fixed ;;
   test) xcodebuild_test ;;
   build) build ;;
-  run-tests) run_tests ;;
+  run-tests) run_tests test ;;
+  phases) phases ;;
   package) package ;;
   clock-stop) clock_stop ;;
   results) results "$2" ;;

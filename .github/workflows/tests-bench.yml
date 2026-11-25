@@ -3,7 +3,8 @@ name: Tests bench
 # What the test-result cache, test selection and the step cache buy on a pull request
 # (.github/tests-bench/scenarios.json; the jobs are described in tests-bench-job.yml).
 # First the default branch's job at the base commit, which fills the caches, and the head commit
-# without Warmbuild; then the head commit with each part of Warmbuild, on fresh runners.
+# without Warmbuild; then the head commit with Warmbuild on a fresh runner, which builds once and
+# runs the tests with each part of Warmbuild in turn.
 # One run is one round; the run id keeps each round's caches its own. Dispatch it from main: only
 # the default branch may write to the cache.
 on:
@@ -13,6 +14,10 @@ on:
         description: Names of entries of scenarios.json, comma-separated; empty runs them all
         required: false
         default: ""
+      rotate:
+        description: Which test phase the warm jobs run first (0, 1, 2, …)
+        required: false
+        default: "0"
       mutate:
         description: Also run the selection check (the changed file broken on purpose)
         type: boolean
@@ -46,7 +51,7 @@ jobs:
           first=$(jq -c --arg mutate "$MUTATE" '[.[] | {entry: ., role: ("fill", "plain",
             (if $mutate == "true" and (.mutations | length) > 0 then "mutate" else empty end))}]' \
             <<< "$entries")
-          second=$(jq -c '[.[] | {entry: ., role: .variants[]}]' <<< "$entries")
+          second=$(jq -c '[.[] | {entry: ., role: "warm"}]' <<< "$entries")
           echo "first=$first" >> "$GITHUB_OUTPUT"
           echo "second=$second" >> "$GITHUB_OUTPUT"
 
@@ -64,6 +69,7 @@ jobs:
       salt: ${{ github.run_id }}
       round: ${{ github.run_id }}
       url: ${{ inputs.url }}
+      rotate: ${{ inputs.rotate }}
 
   second:
     needs: [plan, first]
@@ -80,3 +86,4 @@ jobs:
       salt: ${{ github.run_id }}
       round: ${{ github.run_id }}
       url: ${{ inputs.url }}
+      rotate: ${{ inputs.rotate }}

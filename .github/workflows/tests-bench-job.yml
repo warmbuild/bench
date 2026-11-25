@@ -5,10 +5,10 @@ name: Tests bench job
 #              step cache: fills the compilation cache and records the passing targets and steps
 #   plain      the pull request's head commit without Warmbuild: one `xcodebuild test`, as the
 #              project's own CI runs it
-#   cache      the head with the Warmbuild Action only (compilation cache), one `xcodebuild test`
-#   testcache  the head with the compilation cache, the test-result cache and the step cache
-#   select     the same, plus test selection as the Action computes it on a pull request
-#   selectfix  `select` with the scheme fix of warmbuild#<fix> applied to the selection's output
+#   warm       the head with the Warmbuild Action: one build-for-testing with the compilation
+#              cache, then the test phases one after another (tests-bench.sh phase): every test,
+#              the test-result cache, test selection with it; then the package tests through the
+#              step cache. The build is the same for every phase, so they share it.
 #   mutate     the head without Warmbuild, the changed file broken on purpose, every test run: the
 #              tests that fail must be ones the selection would have run
 # The measured part starts before the Warmbuild step and ends when the tests are done.
@@ -31,6 +31,11 @@ on:
       url:
         required: true
         type: string
+      rotate:
+        description: Which test phase the warm job runs first
+        required: false
+        type: string
+        default: "0"
 
 permissions:
   contents: read
@@ -53,7 +58,8 @@ jobs:
       CACHE_URL: ${{ inputs.url }}
       BASE: ${{ fromJSON(inputs.entry).base }}
       WARMBUILD: ${{ inputs.role != 'plain' && inputs.role != 'mutate' }}
-      SPLIT: ${{ inputs.role != 'plain' && inputs.role != 'cache' && inputs.role != 'mutate' }}
+      SPLIT: ${{ inputs.role == 'fill' || inputs.role == 'warm' }}
+      ROTATE: ${{ inputs.rotate }}
       PACKAGE: ${{ fromJSON(inputs.entry).package.run || '' }}
     steps:
       - run: |
@@ -81,10 +87,13 @@ jobs:
           [ -n "$newest" ] || { echo "::error::no Xcode $XCODE here"; exit 1; }
           sudo xcode-select -s "$newest"
           xcodebuild -version
-      - name: The published client
-        if: inputs.role == 'select' || inputs.role == 'selectfix' || inputs.role == 'mutate'
+      # The same commit as warmbuild/action@v1: the warm job runs its test-cache step and test
+      # selection from it, several times in one job.
+      - name: The published Action
+        if: inputs.role == 'warm' || inputs.role == 'mutate'
         run: |
           git clone -q --depth 1 --branch "$CLIENT_TAG" https://github.com/warmbuild/action "$RUNNER_TEMP/wb-action"
+          echo "WARMBUILD_ACTION=$RUNNER_TEMP/wb-action" >> "$GITHUB_ENV"
           echo "WARMBUILD_CLIENT=$RUNNER_TEMP/wb-action/action/client/warmbuild.mjs" >> "$GITHUB_ENV"
       - name: The project's own skipped tests
         run: bench/.github/scripts/tests-bench.sh skips
@@ -118,12 +127,6 @@ jobs:
           report: ${{ inputs.role == 'fill' && 'true' || 'false' }}
       - name: Warmbuild step done
         run: bench/.github/scripts/tests-bench.sh mark action stop
-      - name: Test selection
-        if: inputs.role == 'select' || inputs.role == 'selectfix'
-        run: bench/.github/scripts/tests-bench.sh select "$BASE"
-      - name: Test selection, with the scheme fix
-        if: inputs.role == 'selectfix'
-        run: bench/.github/scripts/tests-bench.sh select-fixed
       - name: Test selection, for the check
         if: inputs.role == 'mutate'
         env:
@@ -136,12 +139,15 @@ jobs:
       - name: Build for testing
         if: env.SPLIT == 'true'
         run: bench/.github/scripts/tests-bench.sh build
+      - name: Test phases
+        if: inputs.role == 'warm'
+        run: bench/.github/scripts/tests-bench.sh phases
       - name: Test cache plan starts
-        if: env.SPLIT == 'true'
+        if: inputs.role == 'fill'
         run: bench/.github/scripts/tests-bench.sh mark plan start
       - uses: warmbuild/action/test-cache@v1
         id: tests
-        if: env.SPLIT == 'true'
+        if: inputs.role == 'fill'
         with:
           url: ${{ inputs.url }}
           derived-data: ${{ env.DERIVED_DATA }}
@@ -150,10 +156,10 @@ jobs:
           workspace: ${{ github.workspace }}/src
           extra-key: ${{ inputs.salt }}
       - name: Test cache plan done
-        if: env.SPLIT == 'true'
+        if: inputs.role == 'fill'
         run: bench/.github/scripts/tests-bench.sh mark plan stop
       - name: Test
-        if: env.SPLIT == 'true' && steps.tests.outputs.tests != 'none'
+        if: inputs.role == 'fill' && steps.tests.outputs.tests != 'none'
         run: bench/.github/scripts/tests-bench.sh run-tests
       - name: Package tests
         if: env.PACKAGE != '' && env.SPLIT != 'true' && inputs.role != 'mutate'
@@ -180,7 +186,7 @@ jobs:
           TESTS_PLANNED: ${{ steps.tests.outputs.tests }}
         run: bench/.github/scripts/tests-bench.sh clock-stop
       - name: Test results
-        if: always()
+        if: always() && inputs.role != 'warm'
         run: bench/.github/scripts/tests-bench.sh results test || true
       - name: Mutation check
         if: always() && inputs.role == 'mutate'
